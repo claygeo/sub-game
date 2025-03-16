@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Submarine Coral Reef Exploration</title>
+    <style>
+        body { margin: 0; overflow: hidden; background: #87ceeb; }
+        #canvas { display: block; width: 100vw; height: 100vh; }
+        #stats { position: absolute; top: 0; left: 0; }
+    </style>
+</head>
+<body>
+    <canvas id="canvas"></canvas>
+    <div id="stats"></div>
+    <!-- CDN Dependencies -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r134/three.min.js"></script>
+    <script src="https://unpkg.com/simplex-noise@2.4.0/simplex-noise.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/stats.js/r16/Stats.min.js"></script>
+    <!-- Custom Modules -->
+    <script type="module">
+        import './js/utilities.js';
+        import './js/submarine.js';
+        import './js/coral.js';
+        import './js/fish.js';
+        import './js/whale.js';
+        import './js/seaweed.js';
+        import './js/rocks.js';
+        import './js/shipwreck.js';
+        import './js/environment.js';
+        import './js/main.js';
+
+        document.addEventListener('DOMContentLoaded', () => {
+            console.log('Three.js loaded:', typeof THREE !== 'undefined');
+            console.log('SimplexNoise loaded:', typeof SimplexNoise !== 'undefined');
+        });
+    </script>
+</body>
+</html>
