@@ -1,19 +1,19 @@
-#Submarine Coral Reef Exploration
+# Submarine Coral Reef Exploration
 
 An immersive 3D web-based underwater exploration game built with Three.js. Dive into a procedurally generated ocean world filled with coral reefs, dynamic marine life, kelp forests, and mysterious underwater terrain.
 
 ## Table of Contents
 
-- [Features](#-features)
-- [Demo](#-demo)
-- [Getting Started](#-getting-started)
-- [Controls](#-controls)
-- [Gameplay](#-gameplay)
-- [Technical Details](#-technical-details)
-- [Development](#-development)
-- [Troubleshooting](#-troubleshooting)
-- [Contributing](#-contributing)
-- [License](#-license)
+- [Features](#features)
+- [Demo](#demo)
+- [Getting Started](#getting-started)
+- [Controls](#controls)
+- [Gameplay](#gameplay)
+- [Technical Details](#technical-details)
+- [Development](#development)
+- [Troubleshooting](#troubleshooting)
+- [Contributing](#contributing)
+- [License](#license)
 
 ## Features
 
@@ -35,7 +35,7 @@ An immersive 3D web-based underwater exploration game built with Three.js. Dive 
 - **Realistic Physics**: Collision detection with terrain
 - **Visual Effects**: Glowing windows and ambient lighting
 
-###**Immersive Controls**
+### **Immersive Controls**
 - **WASD Movement**: Intuitive submarine navigation
 - **Mouse Camera**: Free-look camera system with zoom
 - **Vertical Control**: Rise and dive with Space/Shift
@@ -49,7 +49,16 @@ An immersive 3D web-based underwater exploration game built with Three.js. Dive 
 
 ## Demo
 
-[**Watch Complete Demo (1:42)**](https://github.com/claygeo/sub-game/releases/download/v1.0.0/submarine-demo.mp4)
+[📺 **Watch Complete Demo (1:42)**](https://github.com/claygeo/sub-game/releases/download/v1.0.0/sub-game-video.mp4)
+
+*Click to stream in browser or right-click → "Save As" to download*
+
+**Demo Highlights:**
+- 🌊 Procedural underwater terrain generation  
+- 🐠 Dynamic kelp forests and fish schools
+- 🚤 Advanced submarine controls and lighting
+- 📊 Real-time performance metrics
+- ⚙️ Debug features and customization options
 
 ## Getting Started
 
@@ -62,8 +71,8 @@ An immersive 3D web-based underwater exploration game built with Three.js. Dive 
 
 1. **Download the Game**
    ```bash
-   git clone <repository-url>
-   cd submarine-coral-reef-exploration
+   git clone https://github.com/claygeo/sub-game.git
+   cd sub-game
    ```
 
 2. **Launch the Game**
@@ -192,12 +201,12 @@ Game Components:
 | Safari | 14+ | Fully Supported |
 | Edge | 90+ | Fully Supported |
 
-## 🛠 Development
+## Development
 
 ### Project Structure
 
 ```
-submarine-coral-reef-exploration/
+sub-game/
 ├── index.html              # Main game file
 ├── README.md               # This documentation
 └── assets/                 # Future asset directory
@@ -323,3 +332,7 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 - **Simplex Noise**: For procedural generation capabilities
 - **Marine Biology References**: For realistic underwater ecosystem inspiration
 - **WebGL Specification**: For enabling browser-based 3D graphics
+
+---
+
+**Dive deep, explore freely, and discover the wonders of the digital ocean! 🌊🐠🚤**
