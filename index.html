@@ -3,37 +3,986 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Submarine Coral Reef Exploration</title>
+    <title>Submarine Coral Reef Exploration - Living Ocean</title>
     <style>
-        body { margin: 0; overflow: hidden; background: #87ceeb; }
-        #canvas { display: block; width: 100vw; height: 100vh; }
-        #stats { position: absolute; top: 0; left: 0; }
+        body { 
+            margin: 0; 
+            overflow: hidden; 
+            background: #000814;
+            font-family: Arial, sans-serif;
+        }
+        #canvas { 
+            display: block; 
+            width: 100vw; 
+            height: 100vh; 
+        }
+        #stats { 
+            position: absolute; 
+            top: 10px; 
+            left: 10px; 
+            z-index: 100;
+        }
+        #info {
+            position: absolute;
+            top: 20px;
+            right: 20px;
+            color: white;
+            background: rgba(0,0,0,0.7);
+            padding: 15px;
+            border-radius: 10px;
+            font-size: 14px;
+            z-index: 100;
+            max-width: 200px;
+        }
+        #debug {
+            position: absolute;
+            bottom: 20px;
+            left: 20px;
+            color: white;
+            background: rgba(0,0,0,0.7);
+            padding: 10px;
+            border-radius: 5px;
+            font-size: 12px;
+            z-index: 100;
+        }
     </style>
 </head>
 <body>
     <canvas id="canvas"></canvas>
     <div id="stats"></div>
+    
+    <div id="info">
+        <div>Depth: <span id="depth">0</span>m</div>
+        <div>Position: <span id="position">0, 0</span></div>
+        <div>Objects: <span id="objects">0</span></div>
+        <div>Terrain Height: <span id="terrainHeight">0</span>m</div>
+    </div>
+
+    <div id="debug">
+        <div>Press T: Toggle wireframe</div>
+        <div>Press C: Cycle terrain colors</div>
+        <div>Press F: Toggle fog</div>
+        <div>Press L: Toggle terrain shading</div>
+        <div>Press H: Toggle headlights</div>
+    </div>
+
     <!-- CDN Dependencies -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r134/three.min.js"></script>
     <script src="https://unpkg.com/simplex-noise@2.4.0/simplex-noise.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/stats.js/r16/Stats.min.js"></script>
-    <!-- Custom Modules -->
-    <script type="module">
-        import './js/utilities.js';
-        import './js/submarine.js';
-        import './js/coral.js';
-        import './js/fish.js';
-        import './js/whale.js';
-        import './js/seaweed.js';
-        import './js/rocks.js';
-        import './js/shipwreck.js';
-        import './js/environment.js';
-        import './js/main.js';
+    
+    <script>
+        // Game state
+        let scene, camera, renderer, submarine, environment;
+        let stats;
+        let moveForward = false, moveBackward = false, turnLeft = false, turnRight = false, rise = false, sink = false;
+        
+        // Mouse controls
+        let mouseX = 0, mouseY = 0;
+        let cameraDistance = 25;
+        let cameraAngleH = 0;
+        let cameraAngleV = 0.3;
+        let isMouseDown = false;
+        let mouseButton = 0;
+        
+        // World generation
+        const cellSize = 50;
+        const viewRadius = 3;
+        const generatedCells = new Map();
+        const cellObjects = new Map();
+        let objectCount = 0;
+        
+        // Submarine lights
+        let headlightsOn = true;
+        let spotlights = [];
+        
+        // Terrain materials
+        let terrainMaterialIndex = 0;
+        const terrainMaterials = [
+            new THREE.MeshLambertMaterial({ 
+                side: THREE.DoubleSide,
+                wireframe: false
+            }),
+            new THREE.MeshPhongMaterial({ 
+                side: THREE.DoubleSide,
+                wireframe: false,
+                shininess: 5
+            }),
+            new THREE.MeshStandardMaterial({ 
+                side: THREE.DoubleSide,
+                wireframe: false,
+                roughness: 0.8,
+                metalness: 0.2
+            })
+        ];
 
-        document.addEventListener('DOMContentLoaded', () => {
-            console.log('Three.js loaded:', typeof THREE !== 'undefined');
-            console.log('SimplexNoise loaded:', typeof SimplexNoise !== 'undefined');
+        // Initialize SimplexNoise
+        const simplex = new SimplexNoise();
+
+        // Enhanced height function
+        function getHeight(x, z, time = 0) {
+            const scale1 = 0.005;
+            const scale2 = 0.01;
+            const scale3 = 0.02;
+            const scale4 = 0.04;
+            
+            const baseHeight = simplex.noise2D(x * scale1, z * scale1) * 40;
+            const ridges = Math.abs(simplex.noise2D(x * scale2, z * scale2)) * 30;
+            const hills = simplex.noise2D(x * scale3, z * scale3) * 20;
+            const details = simplex.noise2D(x * scale4, z * scale4) * 10;
+            const valleys = -Math.abs(simplex.noise2D(x * 0.003, z * 0.003)) * 25;
+            
+            return -30 + baseHeight + ridges + hills + details + valleys;
+        }
+
+        // Create environment
+        function createEnvironment() {
+            console.log('Creating living ocean environment...');
+            
+            const terrainChunks = [];
+            const chunkSize = 100;
+            const chunksPerSide = 7;
+            
+            for (let x = 0; x < chunksPerSide; x++) {
+                for (let z = 0; z < chunksPerSide; z++) {
+                    const chunkX = x - Math.floor(chunksPerSide / 2);
+                    const chunkZ = z - Math.floor(chunksPerSide / 2);
+                    const chunk = createTerrainChunk(chunkSize, 32, chunkX, chunkZ);
+                    chunk.position.set(
+                        chunkX * chunkSize, 
+                        0, 
+                        chunkZ * chunkSize
+                    );
+                    chunk.userData = { chunkX: chunkX, chunkZ: chunkZ };
+                    terrainChunks.push(chunk);
+                }
+            }
+            
+            return {
+                chunks: terrainChunks,
+                chunkSize: chunkSize,
+                chunksPerSide: chunksPerSide,
+                getHeight: getHeight,
+                updatePosition: function(submarinePosition) {
+                    const centerChunkX = Math.round(submarinePosition.x / chunkSize);
+                    const centerChunkZ = Math.round(submarinePosition.z / chunkSize);
+                    
+                    let index = 0;
+                    const halfChunks = Math.floor(chunksPerSide / 2);
+                    
+                    for (let x = 0; x < chunksPerSide; x++) {
+                        for (let z = 0; z < chunksPerSide; z++) {
+                            const chunkX = centerChunkX + (x - halfChunks);
+                            const chunkZ = centerChunkZ + (z - halfChunks);
+                            
+                            terrainChunks[index].position.set(
+                                chunkX * chunkSize,
+                                0,
+                                chunkZ * chunkSize
+                            );
+                            
+                            terrainChunks[index].userData.chunkX = chunkX;
+                            terrainChunks[index].userData.chunkZ = chunkZ;
+                            
+                            updateChunkGeometry(terrainChunks[index], chunkX, chunkZ, chunkSize);
+                            
+                            index++;
+                        }
+                    }
+                }
+            };
+        }
+
+        // Create terrain chunk
+        function createTerrainChunk(size, segments, chunkX, chunkZ) {
+            const geometry = new THREE.PlaneGeometry(size, size, segments, segments);
+            geometry.rotateX(-Math.PI / 2);
+            
+            const vertices = geometry.attributes.position.array;
+            const colors = new Float32Array(vertices.length);
+            
+            let minHeight = Infinity;
+            let maxHeight = -Infinity;
+            
+            for (let i = 0; i < vertices.length; i += 3) {
+                const localX = vertices[i];
+                const localZ = vertices[i + 2];
+                const worldX = chunkX * size + localX;
+                const worldZ = chunkZ * size + localZ;
+                const height = getHeight(worldX, worldZ);
+                
+                vertices[i + 1] = height;
+                minHeight = Math.min(minHeight, height);
+                maxHeight = Math.max(maxHeight, height);
+            }
+            
+            for (let i = 0; i < vertices.length; i += 3) {
+                const height = vertices[i + 1];
+                const normalizedHeight = (height - minHeight) / (maxHeight - minHeight);
+                
+                // Ocean floor gradient: deep purple-blue to sandy
+                const deepColor = { r: 0.05, g: 0.05, b: 0.15 };
+                const midColor = { r: 0.15, g: 0.25, b: 0.35 };
+                const shallowColor = { r: 0.4, g: 0.35, b: 0.25 };
+                
+                let color;
+                if (normalizedHeight < 0.5) {
+                    const t = normalizedHeight * 2;
+                    color = {
+                        r: deepColor.r + (midColor.r - deepColor.r) * t,
+                        g: deepColor.g + (midColor.g - deepColor.g) * t,
+                        b: deepColor.b + (midColor.b - deepColor.b) * t
+                    };
+                } else {
+                    const t = (normalizedHeight - 0.5) * 2;
+                    color = {
+                        r: midColor.r + (shallowColor.r - midColor.r) * t,
+                        g: midColor.g + (shallowColor.g - midColor.g) * t,
+                        b: midColor.b + (shallowColor.b - midColor.b) * t
+                    };
+                }
+                
+                colors[i] = color.r;
+                colors[i + 1] = color.g;
+                colors[i + 2] = color.b;
+            }
+            
+            geometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+            geometry.computeVertexNormals();
+            geometry.attributes.position.needsUpdate = true;
+            
+            const material = new THREE.MeshLambertMaterial({ 
+                vertexColors: true,
+                side: THREE.DoubleSide,
+                wireframe: false
+            });
+            
+            const chunk = new THREE.Mesh(geometry, material);
+            chunk.receiveShadow = true;
+            chunk.castShadow = false;
+            chunk.userData.segments = segments;
+            chunk.userData.hasVertexColors = true;
+            
+            return chunk;
+        }
+
+        // Update chunk geometry
+        function updateChunkGeometry(chunk, chunkX, chunkZ, chunkSize) {
+            const segments = chunk.userData.segments;
+            const vertices = chunk.geometry.attributes.position.array;
+            const colors = chunk.geometry.attributes.color.array;
+            
+            let minHeight = Infinity;
+            let maxHeight = -Infinity;
+            
+            for (let i = 0; i < vertices.length; i += 3) {
+                const localX = vertices[i];
+                const localZ = vertices[i + 2];
+                const worldX = chunkX * chunkSize + localX;
+                const worldZ = chunkZ * chunkSize + localZ;
+                const height = getHeight(worldX, worldZ);
+                
+                vertices[i + 1] = height;
+                minHeight = Math.min(minHeight, height);
+                maxHeight = Math.max(maxHeight, height);
+            }
+            
+            if (chunk.userData.hasVertexColors) {
+                for (let i = 0; i < vertices.length; i += 3) {
+                    const height = vertices[i + 1];
+                    const normalizedHeight = (height - minHeight) / (maxHeight - minHeight);
+                    
+                    const deepColor = { r: 0.05, g: 0.05, b: 0.15 };
+                    const midColor = { r: 0.15, g: 0.25, b: 0.35 };
+                    const shallowColor = { r: 0.4, g: 0.35, b: 0.25 };
+                    
+                    let color;
+                    if (normalizedHeight < 0.5) {
+                        const t = normalizedHeight * 2;
+                        color = {
+                            r: deepColor.r + (midColor.r - deepColor.r) * t,
+                            g: deepColor.g + (midColor.g - deepColor.g) * t,
+                            b: deepColor.b + (midColor.b - deepColor.b) * t
+                        };
+                    } else {
+                        const t = (normalizedHeight - 0.5) * 2;
+                        color = {
+                            r: midColor.r + (shallowColor.r - midColor.r) * t,
+                            g: midColor.g + (shallowColor.g - midColor.g) * t,
+                            b: midColor.b + (shallowColor.b - midColor.b) * t
+                        };
+                    }
+                    
+                    colors[i] = color.r;
+                    colors[i + 1] = color.g;
+                    colors[i + 2] = color.b;
+                }
+                chunk.geometry.attributes.color.needsUpdate = true;
+            }
+            
+            chunk.geometry.attributes.position.needsUpdate = true;
+            chunk.geometry.computeVertexNormals();
+        }
+
+        // Create submarine with enhanced details
+        function createSubmarine() {
+            const group = new THREE.Group();
+            
+            // Main body with metallic finish
+            const bodyGeometry = new THREE.CylinderGeometry(1.5, 1.2, 12, 16);
+            const bodyMaterial = new THREE.MeshStandardMaterial({ 
+                color: 0xffdd00,
+                metalness: 0.7,
+                roughness: 0.3
+            });
+            const body = new THREE.Mesh(bodyGeometry, bodyMaterial);
+            body.rotation.x = Math.PI / 2;
+            body.castShadow = true;
+            group.add(body);
+            
+            // Conning tower
+            const towerGeometry = new THREE.CylinderGeometry(0.9, 0.9, 3, 8);
+            const tower = new THREE.Mesh(towerGeometry, bodyMaterial);
+            tower.position.set(0, 1.8, 0);
+            tower.castShadow = true;
+            group.add(tower);
+            
+            // Periscope
+            const periscopeGeometry = new THREE.CylinderGeometry(0.1, 0.1, 1.5, 6);
+            const periscopeMaterial = new THREE.MeshStandardMaterial({ 
+                color: 0x333333,
+                metalness: 0.8,
+                roughness: 0.2
+            });
+            const periscope = new THREE.Mesh(periscopeGeometry, periscopeMaterial);
+            periscope.position.set(0.3, 3, 0);
+            group.add(periscope);
+            
+            // Propeller
+            const propGroup = new THREE.Group();
+            const propBladeGeometry = new THREE.BoxGeometry(0.1, 2, 0.5);
+            const propMaterial = new THREE.MeshStandardMaterial({ 
+                color: 0x666666,
+                metalness: 0.8,
+                roughness: 0.3
+            });
+            
+            for (let i = 0; i < 3; i++) {
+                const blade = new THREE.Mesh(propBladeGeometry, propMaterial);
+                blade.rotation.z = (i * Math.PI * 2) / 3;
+                propGroup.add(blade);
+            }
+            propGroup.position.set(0, 0, -6.5);
+            group.propeller = propGroup;
+            group.add(propGroup);
+            
+            // Windows
+            const windowGeometry = new THREE.SphereGeometry(0.3, 8, 8);
+            const windowMaterial = new THREE.MeshStandardMaterial({ 
+                color: 0x88ccff,
+                emissive: 0x88ccff,
+                emissiveIntensity: 0.2,
+                metalness: 0.1,
+                roughness: 0.1
+            });
+            
+            for (let i = 0; i < 5; i++) {
+                const window = new THREE.Mesh(windowGeometry, windowMaterial);
+                window.position.set(0, 0.8, -4 + i * 2);
+                window.scale.set(1, 0.8, 0.8);
+                group.add(window);
+            }
+            
+            return group;
+        }
+
+        // Create kelp forest
+        function createKelp(x, z) {
+            const group = new THREE.Group();
+            const kelpCount = 3 + Math.floor(Math.random() * 4);
+            
+            for (let i = 0; i < kelpCount; i++) {
+                const kelp = new THREE.Group();
+                const segments = 8 + Math.floor(Math.random() * 8);
+                const curve = new THREE.CatmullRomCurve3([]);
+                
+                // Create swaying kelp strand
+                let currentHeight = 0;
+                for (let j = 0; j <= segments; j++) {
+                    const swayX = Math.sin(j * 0.3) * (j / segments) * 2;
+                    const swayZ = Math.cos(j * 0.3) * (j / segments) * 1.5;
+                    curve.points.push(new THREE.Vector3(swayX, currentHeight, swayZ));
+                    currentHeight += 2 + Math.random();
+                }
+                
+                const tubeGeometry = new THREE.TubeGeometry(curve, segments * 2, 0.2 + Math.random() * 0.3, 6, false);
+                const kelpMaterial = new THREE.MeshLambertMaterial({ 
+                    color: new THREE.Color(0.1 + Math.random() * 0.1, 0.3 + Math.random() * 0.2, 0.1),
+                    side: THREE.DoubleSide
+                });
+                const kelpMesh = new THREE.Mesh(tubeGeometry, kelpMaterial);
+                
+                // Add leafy blades
+                for (let k = 0; k < segments / 2; k++) {
+                    const bladeGeometry = new THREE.PlaneGeometry(1 + Math.random(), 2 + Math.random());
+                    const blade = new THREE.Mesh(bladeGeometry, kelpMaterial);
+                    const t = (k * 2) / segments;
+                    const pos = curve.getPointAt(t);
+                    blade.position.copy(pos);
+                    blade.rotation.x = Math.random() * 0.5 - 0.25;
+                    blade.rotation.y = Math.random() * Math.PI;
+                    blade.rotation.z = Math.random() * 0.5 - 0.25;
+                    kelp.add(blade);
+                }
+                
+                kelp.add(kelpMesh);
+                kelp.position.set(
+                    (Math.random() - 0.5) * 10,
+                    0,
+                    (Math.random() - 0.5) * 10
+                );
+                
+                // Store animation data
+                kelp.userData = {
+                    swaySpeed: 0.5 + Math.random() * 0.5,
+                    swayAmplitude: 0.2 + Math.random() * 0.3,
+                    phase: Math.random() * Math.PI * 2
+                };
+                
+                group.add(kelp);
+            }
+            
+            return group;
+        }
+
+        // Create school of fish
+        function createFishSchool(x, z) {
+            const group = new THREE.Group();
+            const fishCount = 8 + Math.floor(Math.random() * 12);
+            const schoolColor = new THREE.Color(
+                0.3 + Math.random() * 0.7,
+                0.3 + Math.random() * 0.7,
+                0.5 + Math.random() * 0.5
+            );
+            
+            for (let i = 0; i < fishCount; i++) {
+                const fish = new THREE.Group();
+                
+                // Fish body - more realistic shape
+                const bodyGeometry = new THREE.SphereGeometry(0.5, 8, 6);
+                bodyGeometry.scale(2.5, 0.8, 1);
+                const fishMaterial = new THREE.MeshPhongMaterial({ 
+                    color: schoolColor,
+                    shininess: 100
+                });
+                const body = new THREE.Mesh(bodyGeometry, fishMaterial);
+                fish.add(body);
+                
+                // Tail fin
+                const tailGeometry = new THREE.ConeGeometry(0.4, 1.2, 6);
+                const tail = new THREE.Mesh(tailGeometry, fishMaterial);
+                tail.position.set(-1.5, 0, 0);
+                tail.rotation.z = -Math.PI / 2;
+                fish.add(tail);
+                
+                // Dorsal fin
+                const dorsalGeometry = new THREE.TetrahedronGeometry(0.3);
+                const dorsalFin = new THREE.Mesh(dorsalGeometry, fishMaterial);
+                dorsalFin.position.set(0, 0.5, 0);
+                dorsalFin.scale.set(0.5, 1.5, 2);
+                fish.add(dorsalFin);
+                
+                // Eyes
+                const eyeGeometry = new THREE.SphereGeometry(0.1, 6, 6);
+                const eyeMaterial = new THREE.MeshBasicMaterial({ color: 0x000000 });
+                const leftEye = new THREE.Mesh(eyeGeometry, eyeMaterial);
+                leftEye.position.set(0.8, 0.2, 0.3);
+                fish.add(leftEye);
+                const rightEye = new THREE.Mesh(eyeGeometry, eyeMaterial);
+                rightEye.position.set(0.8, 0.2, -0.3);
+                fish.add(rightEye);
+                
+                // Position in school formation
+                const angle = (i / fishCount) * Math.PI * 2;
+                const radius = 2 + Math.random() * 3;
+                fish.position.set(
+                    Math.cos(angle) * radius,
+                    (Math.random() - 0.5) * 2,
+                    Math.sin(angle) * radius
+                );
+                
+                // Animation data
+                fish.userData = {
+                    speed: 0.8 + Math.random() * 0.4,
+                    amplitude: 1 + Math.random() * 2,
+                    phase: Math.random() * Math.PI * 2,
+                    verticalPhase: Math.random() * Math.PI * 2
+                };
+                
+                group.add(fish);
+            }
+            
+            // School movement data
+            group.userData = {
+                centerX: x,
+                centerZ: z,
+                schoolSpeed: 0.3 + Math.random() * 0.2,
+                schoolRadius: 15 + Math.random() * 10,
+                schoolPhase: Math.random() * Math.PI * 2
+            };
+            
+            return group;
+        }
+
+        // Create rock formation
+        function createRockFormation(x, z) {
+            const group = new THREE.Group();
+            const rockCount = 2 + Math.floor(Math.random() * 4);
+            
+            for (let i = 0; i < rockCount; i++) {
+                const rockGeometry = new THREE.DodecahedronGeometry(
+                    2 + Math.random() * 3,
+                    Math.floor(Math.random() * 2)
+                );
+                
+                // Deform vertices for natural look
+                const positions = rockGeometry.attributes.position.array;
+                for (let j = 0; j < positions.length; j += 3) {
+                    const noise = (Math.random() - 0.5) * 0.3;
+                    positions[j] *= (1 + noise);
+                    positions[j + 1] *= (1 + noise * 0.5);
+                    positions[j + 2] *= (1 + noise);
+                }
+                rockGeometry.computeVertexNormals();
+                
+                const rockMaterial = new THREE.MeshStandardMaterial({ 
+                    color: new THREE.Color(
+                        0.3 + Math.random() * 0.2,
+                        0.3 + Math.random() * 0.2,
+                        0.3 + Math.random() * 0.1
+                    ),
+                    roughness: 0.9,
+                    metalness: 0.1
+                });
+                
+                const rock = new THREE.Mesh(rockGeometry, rockMaterial);
+                rock.position.set(
+                    (Math.random() - 0.5) * 8,
+                    Math.random() * 2,
+                    (Math.random() - 0.5) * 8
+                );
+                rock.rotation.set(
+                    Math.random() * Math.PI,
+                    Math.random() * Math.PI,
+                    Math.random() * Math.PI
+                );
+                rock.castShadow = true;
+                rock.receiveShadow = true;
+                
+                group.add(rock);
+            }
+            
+            return group;
+        }
+
+        // Generate cell content
+        function generateCell(cellX, cellZ) {
+            const cellKey = `${cellX}-${cellZ}`;
+            if (generatedCells.has(cellKey)) return;
+            
+            generatedCells.set(cellKey, true);
+            const objects = { kelp: [], fish: [], rocks: [] };
+            cellObjects.set(cellKey, objects);
+            
+            const centerX = cellX * cellSize;
+            const centerZ = cellZ * cellSize;
+            
+            // Generate kelp forests (in valleys)
+            const terrainHeight = getHeight(centerX, centerZ);
+            if (terrainHeight < -20 && Math.random() < 0.7) {
+                const kelp = createKelp(centerX, centerZ);
+                kelp.position.set(
+                    centerX + (Math.random() - 0.5) * cellSize * 0.8,
+                    terrainHeight,
+                    centerZ + (Math.random() - 0.5) * cellSize * 0.8
+                );
+                scene.add(kelp);
+                objects.kelp.push(kelp);
+                objectCount++;
+            }
+            
+            // Generate fish schools (mid-water)
+            if (Math.random() < 0.5) {
+                const fish = createFishSchool(centerX, centerZ);
+                const fishHeight = getHeight(centerX, centerZ) + 10 + Math.random() * 20;
+                fish.position.set(centerX, fishHeight, centerZ);
+                scene.add(fish);
+                objects.fish.push(fish);
+                objectCount++;
+            }
+            
+            // Generate rock formations (on slopes)
+            if (Math.abs(terrainHeight + 10) < 20 && Math.random() < 0.6) {
+                const rocks = createRockFormation(centerX, centerZ);
+                rocks.position.set(
+                    centerX + (Math.random() - 0.5) * cellSize * 0.8,
+                    terrainHeight,
+                    centerZ + (Math.random() - 0.5) * cellSize * 0.8
+                );
+                scene.add(rocks);
+                objects.rocks.push(rocks);
+                objectCount++;
+            }
+        }
+
+        // Populate world
+        function populateWorld() {
+            const subPosition = submarine.position;
+            const subCellX = Math.floor(subPosition.x / cellSize);
+            const subCellZ = Math.floor(subPosition.z / cellSize);
+            const activeCells = new Set();
+            
+            // Generate cells around submarine
+            for (let dx = -viewRadius; dx <= viewRadius; dx++) {
+                for (let dz = -viewRadius; dz <= viewRadius; dz++) {
+                    const cellX = subCellX + dx;
+                    const cellZ = subCellZ + dz;
+                    const cellKey = `${cellX}-${cellZ}`;
+                    activeCells.add(cellKey);
+                    
+                    if (!generatedCells.has(cellKey)) {
+                        generateCell(cellX, cellZ);
+                    }
+                }
+            }
+            
+            // Remove distant cells
+            for (const [cellKey, objects] of cellObjects) {
+                if (!activeCells.has(cellKey)) {
+                    [...objects.kelp, ...objects.fish, ...objects.rocks].forEach(obj => {
+                        scene.remove(obj);
+                        objectCount--;
+                    });
+                    cellObjects.delete(cellKey);
+                    generatedCells.delete(cellKey);
+                }
+            }
+        }
+
+        // Animate ocean life
+        function animateOceanLife(time) {
+            const t = time * 0.001;
+            
+            for (const [cellKey, objects] of cellObjects) {
+                // Animate kelp swaying
+                objects.kelp.forEach(kelpGroup => {
+                    kelpGroup.children.forEach(kelp => {
+                        if (kelp.userData) {
+                            const sway = Math.sin(t * kelp.userData.swaySpeed + kelp.userData.phase) * kelp.userData.swayAmplitude;
+                            kelp.rotation.x = sway * 0.5;
+                            kelp.rotation.z = sway * 0.3;
+                        }
+                    });
+                });
+                
+                // Animate fish schools
+                objects.fish.forEach(school => {
+                    if (school.userData) {
+                        // School movement
+                        const schoolAngle = t * school.userData.schoolSpeed + school.userData.schoolPhase;
+                        school.position.x = school.userData.centerX + Math.cos(schoolAngle) * school.userData.schoolRadius;
+                        school.position.z = school.userData.centerZ + Math.sin(schoolAngle) * school.userData.schoolRadius;
+                        school.rotation.y = -schoolAngle + Math.PI / 2;
+                        
+                        // Individual fish movement
+                        school.children.forEach((fish, i) => {
+                            if (fish.userData) {
+                                const fishT = t * fish.userData.speed + fish.userData.phase;
+                                fish.position.y += Math.sin(fishT + fish.userData.verticalPhase) * 0.02;
+                                fish.rotation.z = Math.sin(fishT * 2) * 0.1;
+                                fish.rotation.x = Math.sin(fishT * 1.5) * 0.05;
+                            }
+                        });
+                    }
+                });
+            }
+        }
+
+        // Initialize
+        function init() {
+            console.log('Initializing living ocean...');
+            
+            // Scene
+            scene = new THREE.Scene();
+            scene.fog = new THREE.FogExp2(0x002244, 0.006);
+            
+            // Camera
+            camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+            camera.position.set(0, 20, 30);
+            
+            // Renderer
+            renderer = new THREE.WebGLRenderer({ 
+                canvas: document.getElementById('canvas'),
+                antialias: true 
+            });
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            renderer.setClearColor(0x001a33);
+            renderer.shadowMap.enabled = true;
+            renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+            
+            // Ocean lighting - brighter for better visibility
+            const ambientLight = new THREE.AmbientLight(0x203050, 0.5);
+            scene.add(ambientLight);
+            
+            // Sunlight filtering through water
+            const sunLight = new THREE.DirectionalLight(0x4499dd, 0.7);
+            sunLight.position.set(50, 100, 50);
+            sunLight.castShadow = true;
+            sunLight.shadow.mapSize.width = 2048;
+            sunLight.shadow.mapSize.height = 2048;
+            sunLight.shadow.camera.near = 0.5;
+            sunLight.shadow.camera.far = 500;
+            sunLight.shadow.camera.left = -100;
+            sunLight.shadow.camera.right = 100;
+            sunLight.shadow.camera.top = 100;
+            sunLight.shadow.camera.bottom = -100;
+            scene.add(sunLight);
+            
+            // Deep ocean glow
+            const hemisphereLight = new THREE.HemisphereLight(0x2266aa, 0x002244, 0.6);
+            scene.add(hemisphereLight);
+            
+            // Create terrain
+            environment = createEnvironment();
+            environment.chunks.forEach(chunk => scene.add(chunk));
+            
+            // Create submarine
+            submarine = createSubmarine();
+            submarine.position.set(0, -5, 0);
+            scene.add(submarine);
+            
+            // Submarine headlights
+            const headlight1 = new THREE.SpotLight(0xffffaa, 2, 100, Math.PI / 6, 0.3);
+            headlight1.position.set(-0.8, 0, 6);
+            headlight1.target.position.set(-0.8, -2, 20);
+            headlight1.castShadow = true;
+            headlight1.shadow.mapSize.width = 1024;
+            headlight1.shadow.mapSize.height = 1024;
+            submarine.add(headlight1);
+            submarine.add(headlight1.target);
+            spotlights.push(headlight1);
+            
+            const headlight2 = new THREE.SpotLight(0xffffaa, 2, 100, Math.PI / 6, 0.3);
+            headlight2.position.set(0.8, 0, 6);
+            headlight2.target.position.set(0.8, -2, 20);
+            headlight2.castShadow = true;
+            headlight2.shadow.mapSize.width = 1024;
+            headlight2.shadow.mapSize.height = 1024;
+            submarine.add(headlight2);
+            submarine.add(headlight2.target);
+            spotlights.push(headlight2);
+            
+            // Submarine ambient glow
+            const subGlow = new THREE.PointLight(0xffff88, 0.5, 20);
+            subGlow.position.set(0, 0, 0);
+            submarine.add(subGlow);
+            
+            // Stats
+            stats = new Stats();
+            document.getElementById('stats').appendChild(stats.domElement);
+            
+            // Controls
+            setupControls();
+            
+            // Start
+            animate();
+        }
+
+        // Setup controls
+        function setupControls() {
+            document.addEventListener('keydown', (e) => {
+                switch (e.code) {
+                    case 'KeyW': moveForward = true; break;
+                    case 'KeyS': moveBackward = true; break;
+                    case 'KeyA': turnLeft = true; break;
+                    case 'KeyD': turnRight = true; break;
+                    case 'Space': e.preventDefault(); rise = true; break;
+                    case 'ShiftLeft':
+                    case 'ShiftRight': sink = true; break;
+                    case 'KeyT':
+                        environment.chunks.forEach(chunk => {
+                            chunk.material.wireframe = !chunk.material.wireframe;
+                        });
+                        break;
+                    case 'KeyC':
+                        environment.chunks.forEach(chunk => {
+                            if (chunk.userData.hasVertexColors) {
+                                chunk.userData.hasVertexColors = false;
+                                chunk.material.vertexColors = false;
+                                chunk.material.color.setHex(0x2a1a0a);
+                            } else {
+                                chunk.userData.hasVertexColors = true;
+                                chunk.material.vertexColors = true;
+                            }
+                            chunk.material.needsUpdate = true;
+                        });
+                        break;
+                    case 'KeyF':
+                        if (scene.fog) {
+                            scene.fog = null;
+                        } else {
+                            scene.fog = new THREE.FogExp2(0x002244, 0.006);
+                        }
+                        break;
+                    case 'KeyL':
+                        terrainMaterialIndex = (terrainMaterialIndex + 1) % terrainMaterials.length;
+                        const newMaterial = terrainMaterials[terrainMaterialIndex].clone();
+                        environment.chunks.forEach(chunk => {
+                            const oldWireframe = chunk.material.wireframe;
+                            const oldVertexColors = chunk.material.vertexColors;
+                            chunk.material = newMaterial.clone();
+                            chunk.material.wireframe = oldWireframe;
+                            chunk.material.vertexColors = oldVertexColors;
+                            chunk.material.needsUpdate = true;
+                        });
+                        break;
+                    case 'KeyH':
+                        headlightsOn = !headlightsOn;
+                        spotlights.forEach(light => {
+                            light.visible = headlightsOn;
+                        });
+                        break;
+                }
+            });
+            
+            document.addEventListener('keyup', (e) => {
+                switch (e.code) {
+                    case 'KeyW': moveForward = false; break;
+                    case 'KeyS': moveBackward = false; break;
+                    case 'KeyA': turnLeft = false; break;
+                    case 'KeyD': turnRight = false; break;
+                    case 'Space': rise = false; break;
+                    case 'ShiftLeft':
+                    case 'ShiftRight': sink = false; break;
+                }
+            });
+
+            // Mouse controls
+            document.addEventListener('mousedown', (e) => {
+                isMouseDown = true;
+                mouseButton = e.button;
+                mouseX = e.clientX;
+                mouseY = e.clientY;
+                e.preventDefault();
+            });
+
+            document.addEventListener('mouseup', () => {
+                isMouseDown = false;
+            });
+
+            document.addEventListener('mousemove', (e) => {
+                if (isMouseDown) {
+                    const deltaX = e.clientX - mouseX;
+                    const deltaY = e.clientY - mouseY;
+                    
+                    cameraAngleH += deltaX * 0.01;
+                    cameraAngleV += deltaY * 0.01;
+                    cameraAngleV = Math.max(-Math.PI/2 + 0.1, Math.min(Math.PI/2 - 0.1, cameraAngleV));
+                    
+                    mouseX = e.clientX;
+                    mouseY = e.clientY;
+                }
+            });
+
+            document.addEventListener('wheel', (e) => {
+                cameraDistance += e.deltaY * 0.05;
+                cameraDistance = Math.max(5, Math.min(100, cameraDistance));
+                e.preventDefault();
+            });
+
+            document.addEventListener('contextmenu', (e) => e.preventDefault());
+        }
+
+        // Update submarine
+        function updateSubmarine(time) {
+            const speed = 0.5;
+            const turnSpeed = 0.03;
+            const verticalSpeed = 0.3;
+            
+            if (moveForward) {
+                const direction = new THREE.Vector3(0, 0, 1).applyQuaternion(submarine.quaternion);
+                submarine.position.add(direction.multiplyScalar(speed));
+            }
+            if (moveBackward) {
+                const direction = new THREE.Vector3(0, 0, -1).applyQuaternion(submarine.quaternion);
+                submarine.position.add(direction.multiplyScalar(speed));
+            }
+            if (turnLeft) submarine.rotateY(turnSpeed);
+            if (turnRight) submarine.rotateY(-turnSpeed);
+            if (rise) submarine.position.y += verticalSpeed;
+            if (sink) submarine.position.y -= verticalSpeed;
+            
+            // Animate propeller
+            if (submarine.propeller && (moveForward || moveBackward)) {
+                submarine.propeller.rotation.z += 0.3 * (moveForward ? 1 : -1);
+            }
+            
+            // Collision with terrain
+            const terrainHeight = getHeight(submarine.position.x, submarine.position.z);
+            submarine.position.y = Math.max(submarine.position.y, terrainHeight + 3);
+            
+            // Update terrain position
+            environment.updatePosition(submarine.position);
+        }
+
+        // Update camera
+        function updateCamera() {
+            const cameraOffset = new THREE.Vector3(
+                Math.sin(cameraAngleH) * Math.cos(cameraAngleV) * cameraDistance,
+                Math.sin(cameraAngleV) * cameraDistance,
+                Math.cos(cameraAngleH) * Math.cos(cameraAngleV) * cameraDistance
+            );
+            
+            camera.position.copy(submarine.position).add(cameraOffset);
+            camera.lookAt(submarine.position);
+        }
+
+        // Update UI
+        function updateUI() {
+            const terrainHeight = getHeight(submarine.position.x, submarine.position.z);
+            document.getElementById('depth').textContent = Math.abs(submarine.position.y).toFixed(1);
+            document.getElementById('position').textContent = 
+                `${submarine.position.x.toFixed(1)}, ${submarine.position.z.toFixed(1)}`;
+            document.getElementById('objects').textContent = objectCount;
+            document.getElementById('terrainHeight').textContent = terrainHeight.toFixed(1);
+        }
+
+        // Animate
+        function animate(time = 0) {
+            requestAnimationFrame(animate);
+            
+            stats.begin();
+            
+            updateSubmarine(time);
+            populateWorld();
+            animateOceanLife(time);
+            updateCamera();
+            updateUI();
+            
+            renderer.render(scene, camera);
+            
+            stats.end();
+        }
+
+        // Resize handler
+        window.addEventListener('resize', () => {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
         });
+
+        // Start
+        document.addEventListener('DOMContentLoaded', init);
     </script>
 </body>
 </html>
