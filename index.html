@@ -3,18 +3,24 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Submarine Combat & Exploration - Living Ocean</title>
+    <title>Submarine Combat & Cave Exploration - Living Ocean</title>
     <style>
         body { 
             margin: 0; 
+            padding: 0;
             overflow: hidden; 
             background: #000814;
             font-family: Arial, sans-serif;
+            width: 100vw;
+            height: 100vh;
         }
         #canvas { 
             display: block; 
             width: 100vw; 
             height: 100vh; 
+            position: absolute;
+            top: 0;
+            left: 0;
         }
         #stats { 
             position: absolute; 
@@ -266,6 +272,28 @@
                 display: block;
             }
         }
+
+        /* Cave entrance indicator */
+        .cave-indicator {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background: rgba(0,0,0,0.8);
+            color: #88ccff;
+            padding: 10px 20px;
+            border-radius: 5px;
+            border: 2px solid #88ccff;
+            font-size: 16px;
+            z-index: 150;
+            display: none;
+            animation: pulse 2s infinite;
+        }
+
+        @keyframes pulse {
+            0%, 100% { opacity: 0.7; transform: translate(-50%, -50%) scale(1); }
+            50% { opacity: 1; transform: translate(-50%, -50%) scale(1.05); }
+        }
     </style>
 </head>
 <body>
@@ -279,14 +307,20 @@
     
     <div class="damage-flash" id="damage-flash"></div>
     
+    <div class="cave-indicator" id="cave-indicator">
+        🕳️ Cave Entrance Nearby - Press C to Enter
+    </div>
+    
     <div id="info">
         <div>Depth: <span id="depth">0</span>m</div>
         <div>Position: <span id="position">0, 0</span></div>
+        <div>Environment: <span id="environment">Ocean</span></div>
         <div>Sharks: <span id="sharks">0</span></div>
         <div>Turtles: <span id="turtles">0</span></div>
         <div>Jellyfish: <span id="jellyfish">0</span></div>
         <div>Torpedoes: <span id="torpedoes">0</span></div>
         <div>Objects: <span id="objects">0</span></div>
+        <div>Caves Found: <span id="caves-found">0</span></div>
     </div>
 
     <div id="game-over">
@@ -301,6 +335,7 @@
         <div>Space/Shift: Rise/Sink</div>
         <div>Mouse: Camera control</div>
         <div>Q/E: Fire torpedoes</div>
+        <div>C: Enter/Exit caves</div>
         <div>H: Toggle headlights</div>
         <div>T: Toggle wireframe</div>
         <div>F: Toggle fog</div>
@@ -329,11 +364,85 @@
     <div id="touch-indicator">Touch and drag to look around</div>
 
     <!-- CDN Dependencies -->
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r134/three.min.js"></script>
-    <script src="https://unpkg.com/simplex-noise@2.4.0/simplex-noise.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/stats.js/r16/Stats.min.js"></script>
     
     <script>
+        // Use fallback SimplexNoise if CDN fails
+        class SimplexNoise {
+            constructor() {
+                this.grad3 = [[1,1,0],[-1,1,0],[1,-1,0],[-1,-1,0],
+                             [1,0,1],[-1,0,1],[1,0,-1],[-1,0,-1],
+                             [0,1,1],[0,-1,1],[0,1,-1],[0,-1,-1]];
+                
+                this.p = [];
+                for(let i=0; i<256; i++) {
+                    this.p[i] = Math.floor(Math.random()*256);
+                }
+                
+                this.perm = [];
+                for(let i=0; i<512; i++) {
+                    this.perm[i] = this.p[i & 255];
+                }
+            }
+            
+            dot(g, x, y) {
+                return g[0]*x + g[1]*y;
+            }
+            
+            noise2D(xin, yin) {
+                const F2 = 0.5*(Math.sqrt(3.0)-1.0);
+                const s = (xin+yin)*F2;
+                const i = Math.floor(xin+s);
+                const j = Math.floor(yin+s);
+                
+                const G2 = (3.0-Math.sqrt(3.0))/6.0;
+                const t = (i+j)*G2;
+                const X0 = i-t;
+                const Y0 = j-t;
+                const x0 = xin-X0;
+                const y0 = yin-Y0;
+                
+                let i1, j1;
+                if(x0>y0) {i1=1; j1=0;}
+                else {i1=0; j1=1;}
+                
+                const x1 = x0 - i1 + G2;
+                const y1 = y0 - j1 + G2;
+                const x2 = x0 - 1.0 + 2.0 * G2;
+                const y2 = y0 - 1.0 + 2.0 * G2;
+                
+                const ii = i & 255;
+                const jj = j & 255;
+                const gi0 = this.perm[ii+this.perm[jj]] % 12;
+                const gi1 = this.perm[ii+i1+this.perm[jj+j1]] % 12;
+                const gi2 = this.perm[ii+1+this.perm[jj+1]] % 12;
+                
+                let t0 = 0.5 - x0*x0-y0*y0;
+                let n0 = 0;
+                if(t0>=0) {
+                    t0 *= t0;
+                    n0 = t0 * t0 * this.dot(this.grad3[gi0], x0, y0);
+                }
+                
+                let t1 = 0.5 - x1*x1-y1*y1;
+                let n1 = 0;
+                if(t1>=0) {
+                    t1 *= t1;
+                    n1 = t1 * t1 * this.dot(this.grad3[gi1], x1, y1);
+                }
+                
+                let t2 = 0.5 - x2*x2-y2*y2;
+                let n2 = 0;
+                if(t2>=0) {
+                    t2 *= t2;
+                    n2 = t2 * t2 * this.dot(this.grad3[gi2], x2, y2);
+                }
+                
+                return 70.0 * (n0 + n1 + n2);
+            }
+        }
+
         // Game state
         let scene, camera, renderer, submarine, environment;
         let stats;
@@ -346,12 +455,17 @@
         let cameraAngleV = 0.3;
         let isMouseDown = false;
         
-        // World generation
-        const cellSize = 50;
-        const viewRadius = 3;
+        // World generation - Optimized
+        const cellSize = 75;
+        const viewRadius = 2;
         const generatedCells = new Map();
         const cellObjects = new Map();
         let objectCount = 0;
+        
+        // Performance optimization variables
+        let frameCount = 0;
+        let lastPerformanceCheck = 0;
+        let adaptiveQuality = 1.0;
         
         // Submarine systems
         let headlightsOn = true;
@@ -374,6 +488,20 @@
         const torpedoCooldown = 300;
         let lastTorpedoTime = 0;
 
+        // FIXED MODULAR CAVE SYSTEM
+        let caveSystem = {
+            entrances: new Map(),
+            loadedCave: null,
+            inCave: false,
+            nearEntrance: null,
+            exitPortal: null,
+            rooms: [],
+            corridors: [],
+            roomMeshes: [],
+            corridorMeshes: [],
+            allCaveMeshes: []
+        };
+
         // Initialize SimplexNoise
         const simplex = new SimplexNoise();
 
@@ -393,16 +521,844 @@
             return -30 + baseHeight + ridges + hills + details + valleys;
         }
 
+        // Initialize
+        function init() {
+            console.log('Initializing submarine combat & unified cave exploration game...');
+            
+            // Scene
+            scene = new THREE.Scene();
+            scene.fog = new THREE.FogExp2(0x002244, 0.006);
+            
+            // Camera
+            camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+            camera.position.set(0, 20, 30);
+            
+            // Renderer
+            renderer = new THREE.WebGLRenderer({ 
+                canvas: document.getElementById('canvas'),
+                antialias: true 
+            });
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            renderer.setClearColor(0x001a33);
+            renderer.shadowMap.enabled = true;
+            renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+            
+            // Lighting
+            const ambientLight = new THREE.AmbientLight(0x203050, 0.5);
+            scene.add(ambientLight);
+            
+            const sunLight = new THREE.DirectionalLight(0x4499dd, 0.7);
+            sunLight.position.set(50, 100, 50);
+            sunLight.castShadow = true;
+            sunLight.shadow.mapSize.width = 2048;
+            sunLight.shadow.mapSize.height = 2048;
+            scene.add(sunLight);
+            
+            const hemisphereLight = new THREE.HemisphereLight(0x2266aa, 0x002244, 0.6);
+            scene.add(hemisphereLight);
+            
+            // Create terrain
+            environment = createEnvironment();
+            environment.chunks.forEach(chunk => scene.add(chunk));
+            
+            // Create submarine
+            submarine = createSubmarine();
+            submarine.position.set(0, -5, 0);
+            submarine.rotation.y = Math.PI;
+            scene.add(submarine);
+            
+            // Submarine headlights
+            const headlight1 = new THREE.SpotLight(0xffffaa, 2, 100, Math.PI / 6, 0.3);
+            headlight1.position.set(-0.8, 0, 6);
+            headlight1.target.position.set(-0.8, -2, 20);
+            headlight1.castShadow = true;
+            submarine.add(headlight1);
+            submarine.add(headlight1.target);
+            spotlights.push(headlight1);
+            
+            const headlight2 = new THREE.SpotLight(0xffffaa, 2, 100, Math.PI / 6, 0.3);
+            headlight2.position.set(0.8, 0, 6);
+            headlight2.target.position.set(0.8, -2, 20);
+            headlight2.castShadow = true;
+            submarine.add(headlight2);
+            submarine.add(headlight2.target);
+            spotlights.push(headlight2);
+            
+            const subGlow = new THREE.PointLight(0xffff88, 0.5, 20);
+            subGlow.position.set(0, 0, 0);
+            submarine.add(subGlow);
+            
+            // Stats
+            stats = new Stats();
+            document.getElementById('stats').appendChild(stats.domElement);
+            
+            // Controls
+            setupControls();
+            
+            // Start
+            console.log('Game initialized successfully');
+            animate();
+        }
+
+        // Main animation loop
+        function animate(time = 0) {
+            requestAnimationFrame(animate);
+            
+            stats.begin();
+            
+            // Performance monitoring
+            checkPerformance(time);
+            
+            updateSubmarine();
+            updateTorpedoes();
+            updateExplosions();
+            
+            // Cave system updates
+            if (!caveSystem.inCave) {
+                checkCaveProximity();
+                spawnMarineLife();
+                cleanupDistantCreatures();
+                
+                // Update creature AI (only in ocean) - Skip some frames for performance
+                if (frameCount % Math.ceil(2 / adaptiveQuality) === 0) {
+                    sharks.forEach(shark => updateSharkAI(shark, time));
+                    turtles.forEach(turtle => updateTurtleAI(turtle, time));
+                    jellyfish.forEach(jelly => updateJellyfishAI(jelly, time));
+                }
+            } else {
+                checkExitProximity();
+                
+                // Animate exit portal if it exists
+                if (caveSystem.exitPortal && caveSystem.exitPortal.userData) {
+                    caveSystem.exitPortal.userData.pulsePhase += 0.05;
+                    const pulse = Math.sin(caveSystem.exitPortal.userData.pulsePhase) * 0.3 + 0.7;
+                    
+                    // Animate portal materials
+                    caveSystem.exitPortal.children.forEach(child => {
+                        if (child.material && child.material.color) {
+                            const originalColor = child.material.color.clone();
+                            child.material.color.multiplyScalar(pulse);
+                        }
+                    });
+                }
+            }
+            
+            // Reduce world population frequency for performance
+            if (frameCount % Math.ceil(3 / adaptiveQuality) === 0) {
+                populateWorld();
+            }
+            
+            animateOceanLife(time);
+            updateCamera();
+            updateUI();
+            
+            renderer.render(scene, camera);
+            
+            stats.end();
+        }
+
+        // Cave entrance detection
+        function findCaveEntrances(x, z, radius = 100) {
+            const entrances = [];
+            const step = 50;
+            
+            for (let dx = -radius; dx <= radius; dx += step) {
+                for (let dz = -radius; dz <= radius; dz += step) {
+                    const testX = x + dx;
+                    const testZ = z + dz;
+                    const height = getHeight(testX, testZ);
+                    
+                    const caveNoise = simplex.noise2D(testX * 0.001, testZ * 0.001);
+                    const shouldHaveCave = height < -40 || (height < -20 && caveNoise > 0.3);
+                    
+                    if (shouldHaveCave) {
+                        const key = `${Math.floor(testX / 150)}-${Math.floor(testZ / 150)}`;
+                        if (!caveSystem.entrances.has(key)) {
+                            entrances.push({ x: testX, z: testZ, y: height, key: key });
+                        }
+                    }
+                }
+            }
+            
+            return entrances;
+        }
+
+        // Create cave entrance visual
+        function createCaveEntrance(x, z, y) {
+            const group = new THREE.Group();
+            
+            // Main entrance hole
+            const holeGeometry = new THREE.CylinderGeometry(12, 16, 8, 16);
+            const holeMaterial = new THREE.MeshPhongMaterial({ 
+                color: 0x000000,
+                transparent: true,
+                opacity: 0.95
+            });
+            const hole = new THREE.Mesh(holeGeometry, holeMaterial);
+            hole.position.y = y + 4;
+            group.add(hole);
+            
+            // Rock formation around entrance
+            for (let i = 0; i < 8; i++) {
+                const angle = (i / 8) * Math.PI * 2;
+                const distance = 15 + Math.random() * 8;
+                
+                const rockGeometry = new THREE.DodecahedronGeometry(3 + Math.random() * 4, 0);
+                const rockMaterial = new THREE.MeshPhongMaterial({ 
+                    color: new THREE.Color(0.15, 0.1, 0.05),
+                    shininess: 10
+                });
+                const rock = new THREE.Mesh(rockGeometry, rockMaterial);
+                
+                rock.position.set(
+                    Math.cos(angle) * distance,
+                    y + Math.random() * 5,
+                    Math.sin(angle) * distance
+                );
+                rock.rotation.set(
+                    Math.random() * Math.PI,
+                    Math.random() * Math.PI,
+                    Math.random() * Math.PI
+                );
+                rock.scale.setScalar(1.2 + Math.random() * 0.6);
+                
+                group.add(rock);
+            }
+            
+            // Mysterious glow from within
+            const innerGlow = new THREE.PointLight(0x4488ff, 1.5, 50);
+            innerGlow.position.set(0, y - 8, 0);
+            group.add(innerGlow);
+            
+            // Particle effect
+            const particleCount = 20;
+            const particleGeometry = new THREE.BufferGeometry();
+            const positions = new Float32Array(particleCount * 3);
+            
+            for (let i = 0; i < particleCount; i++) {
+                positions[i * 3] = (Math.random() - 0.5) * 24;
+                positions[i * 3 + 1] = y - Math.random() * 15;
+                positions[i * 3 + 2] = (Math.random() - 0.5) * 24;
+            }
+            
+            particleGeometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+            const particleMaterial = new THREE.PointsMaterial({
+                color: 0x88aaff,
+                size: 1.0,
+                transparent: true,
+                opacity: 0.8
+            });
+            const particles = new THREE.Points(particleGeometry, particleMaterial);
+            group.add(particles);
+            
+            // Add a beacon light that pulses
+            const beaconGeometry = new THREE.SphereGeometry(1, 8, 8);
+            const beaconMaterial = new THREE.MeshPhongMaterial({
+                color: 0x88ccff,
+                shininess: 100
+            });
+            const beacon = new THREE.Mesh(beaconGeometry, beaconMaterial);
+            beacon.position.set(0, y + 8, 0);
+            group.add(beacon);
+            
+            group.userData = {
+                type: 'cave_entrance',
+                entranceRadius: 16,
+                particles: particles,
+                beacon: beacon,
+                pulsePhase: Math.random() * Math.PI * 2
+            };
+            
+            return group;
+        }
+
+        // Check cave entrance proximity
+        function checkCaveProximity() {
+            if (caveSystem.inCave) return;
+            
+            const subPos = submarine.position;
+            let nearestEntrance = null;
+            let minDistance = Infinity;
+            
+            for (const [key, entrance] of caveSystem.entrances) {
+                const distance = subPos.distanceTo(new THREE.Vector3(entrance.x, entrance.y, entrance.z));
+                if (distance < 40 && distance < minDistance) {
+                    minDistance = distance;
+                    nearestEntrance = { key, ...entrance, distance };
+                }
+            }
+            
+            const indicator = document.getElementById('cave-indicator');
+            if (nearestEntrance && nearestEntrance.distance < 25) {
+                caveSystem.nearEntrance = nearestEntrance;
+                indicator.style.display = 'block';
+                indicator.textContent = `🕳️ Cave Entrance ${nearestEntrance.distance.toFixed(1)}m away - Press C to Enter`;
+            } else {
+                caveSystem.nearEntrance = null;
+                indicator.style.display = 'none';
+            }
+        }
+
+        // MODULAR CAVE SYSTEM - Using Separate Meshes
+        function createModularCaveSystem(entrance) {
+            console.log('Creating modular cave system with separate meshes...');
+            
+            // Clear previous cave data
+            caveSystem.rooms = [];
+            caveSystem.corridors = [];
+            caveSystem.roomMeshes = [];
+            caveSystem.corridorMeshes = [];
+            caveSystem.allCaveMeshes = [];
+            
+            // Create cave layout
+            const caveLayout = createCaveLayout(entrance);
+            
+            // Create separate meshes for each room
+            caveLayout.rooms.forEach((room, index) => {
+                const roomMesh = createRoomMesh(room);
+                roomMesh.position.set(room.x, room.y, room.z);
+                roomMesh.userData = { type: 'cave_room', roomId: index, originalRoom: room };
+                caveSystem.roomMeshes.push(roomMesh);
+                caveSystem.allCaveMeshes.push(roomMesh);
+                
+                console.log(`Created room ${index} at (${room.x}, ${room.y}, ${room.z}) with radius ${room.radius}`);
+            });
+            
+            // Create separate meshes for each corridor
+            caveLayout.connections.forEach((corridor, index) => {
+                const corridorMesh = createCorridorMesh(corridor, caveLayout.rooms);
+                corridorMesh.userData = { type: 'cave_corridor', corridorId: index, originalCorridor: corridor };
+                caveSystem.corridorMeshes.push(corridorMesh);
+                caveSystem.allCaveMeshes.push(corridorMesh);
+                
+                console.log(`Created corridor ${index} connecting room ${corridor.from} to room ${corridor.to}`);
+            });
+            
+            // Create cave group
+            const caveGroup = new THREE.Group();
+            
+            // Add all cave meshes to the group
+            caveSystem.allCaveMeshes.forEach(mesh => {
+                caveGroup.add(mesh);
+            });
+            
+            // Add atmospheric elements
+            const atmosphereElements = createCaveAtmosphere(entrance, caveLayout);
+            atmosphereElements.forEach(element => caveGroup.add(element));
+            
+            // Store and add to scene
+            caveSystem.loadedCave = caveGroup;
+            scene.add(caveGroup);
+            
+            console.log(`Modular cave system created with ${caveSystem.roomMeshes.length} rooms and ${caveSystem.corridorMeshes.length} corridors`);
+            
+            return caveLayout;
+        }
+
+        // Create simplified cave layout with circular rooms
+        function createCaveLayout(entrance) {
+            const rooms = [];
+            const connections = [];
+            
+            // Define room configurations - using spherical rooms
+            const roomConfigs = [
+                // Main entrance cavern - ALWAYS at origin for consistent spawning
+                { x: 0, y: -30, z: 0, radius: 25, type: 'entrance' },
+                // Crystal Gallery  
+                { x: 80, y: -25, z: 40, radius: 20, type: 'crystal' },
+                // Underground Lake
+                { x: 50, y: -35, z: 120, radius: 22, type: 'lake' },
+                // Ancient Chamber
+                { x: 150, y: -20, z: 75, radius: 18, type: 'ancient' }
+            ];
+            
+            roomConfigs.forEach((config, index) => {
+                const room = {
+                    id: index,
+                    x: config.x, y: config.y, z: config.z,
+                    radius: config.radius,
+                    type: config.type,
+                    center: new THREE.Vector3(config.x, config.y, config.z)
+                };
+                rooms.push(room);
+                caveSystem.rooms.push(room);
+                
+                console.log(`Cave room ${index} (${config.type}): center=(${config.x}, ${config.y}, ${config.z}), radius=${config.radius}`);
+            });
+            
+            // Create connections between rooms
+            const connectionPairs = [
+                { from: 0, to: 1 }, // entrance to crystal
+                { from: 1, to: 2 }, // crystal to lake  
+                { from: 1, to: 3 }, // crystal to ancient
+                { from: 2, to: 3 }  // lake to ancient
+            ];
+            
+            connectionPairs.forEach(conn => {
+                const fromRoom = rooms[conn.from];
+                const toRoom = rooms[conn.to];
+                
+                const corridor = {
+                    from: conn.from,
+                    to: conn.to,
+                    start: fromRoom.center,
+                    end: toRoom.center,
+                    radius: 8 // Corridor radius
+                };
+                
+                connections.push(corridor);
+                caveSystem.corridors.push(corridor);
+                
+                console.log(`Cave corridor: room ${conn.from} to room ${conn.to}`);
+            });
+            
+            console.log(`Created cave layout: ${rooms.length} rooms, ${connections.length} corridors`);
+            
+            return { rooms, connections };
+        }
+
+        // Create individual room mesh using sphere geometry
+        function createRoomMesh(room) {
+            const geometry = new THREE.SphereGeometry(room.radius, 16, 12);
+            
+            // Create material with proper front-side rendering and lighting
+            const material = new THREE.MeshPhongMaterial({ 
+                color: getRoomColor(room.type),
+                side: THREE.BackSide, // Use BackSide for hollow interior
+                shininess: 5,
+                transparent: true,
+                opacity: 0.9
+            });
+            
+            const mesh = new THREE.Mesh(geometry, material);
+            mesh.castShadow = false;
+            mesh.receiveShadow = true;
+            
+            return mesh;
+        }
+
+        // Create individual corridor mesh using cylinder geometry
+        function createCorridorMesh(corridor, rooms) {
+            const fromRoom = rooms[corridor.from];
+            const toRoom = rooms[corridor.to];
+            
+            const direction = new THREE.Vector3().subVectors(toRoom.center, fromRoom.center);
+            const distance = direction.length();
+            
+            // Create cylinder geometry for corridor
+            const geometry = new THREE.CylinderGeometry(corridor.radius, corridor.radius, distance, 12);
+            
+            const material = new THREE.MeshPhongMaterial({ 
+                color: 0x2a1a0a,
+                side: THREE.BackSide, // Use BackSide for hollow interior
+                shininess: 5,
+                transparent: true,
+                opacity: 0.9
+            });
+            
+            const mesh = new THREE.Mesh(geometry, material);
+            
+            // Position corridor between rooms
+            const midpoint = fromRoom.center.clone().lerp(toRoom.center, 0.5);
+            mesh.position.copy(midpoint);
+            
+            // Orient corridor to connect the rooms
+            direction.normalize();
+            const up = new THREE.Vector3(0, 1, 0);
+            const angle = Math.acos(up.dot(direction));
+            const axis = new THREE.Vector3().crossVectors(up, direction).normalize();
+            
+            if (axis.length() > 0) {
+                mesh.setRotationFromAxisAngle(axis, angle);
+            }
+            
+            mesh.castShadow = false;
+            mesh.receiveShadow = true;
+            
+            return mesh;
+        }
+
+        // Get room-specific colors
+        function getRoomColor(roomType) {
+            switch (roomType) {
+                case 'entrance': return 0x3a2a1a;
+                case 'crystal': return 0x2a2a3a;
+                case 'lake': return 0x1a2a3a;
+                case 'ancient': return 0x3a3a2a;
+                default: return 0x2a1a0a;
+            }
+        }
+
+        // Enhanced cave collision detection using raycasting
+        function checkCaveCollision(position) {
+            if (!caveSystem.inCave || caveSystem.allCaveMeshes.length === 0) return false;
+            
+            // Check if position is inside any room (safe zones)
+            for (const room of caveSystem.rooms) {
+                const distance = position.distanceTo(room.center);
+                if (distance < room.radius - 3) { // 3 unit safety margin
+                    return false; // Inside room, safe
+                }
+            }
+            
+            // Check if position is inside any corridor
+            for (let i = 0; i < caveSystem.corridors.length; i++) {
+                const corridor = caveSystem.corridors[i];
+                const fromRoom = caveSystem.rooms[corridor.from];
+                const toRoom = caveSystem.rooms[corridor.to];
+                
+                // Project position onto corridor line
+                const corridorStart = fromRoom.center;
+                const corridorEnd = toRoom.center;
+                const corridorDirection = new THREE.Vector3().subVectors(corridorEnd, corridorStart);
+                const corridorLength = corridorDirection.length();
+                corridorDirection.normalize();
+                
+                const toPosition = new THREE.Vector3().subVectors(position, corridorStart);
+                const projectionLength = toPosition.dot(corridorDirection);
+                
+                // Check if projection is within corridor bounds
+                if (projectionLength >= 0 && projectionLength <= corridorLength) {
+                    const projectionPoint = corridorStart.clone().add(corridorDirection.multiplyScalar(projectionLength));
+                    const distanceFromCorridorAxis = position.distanceTo(projectionPoint);
+                    
+                    if (distanceFromCorridorAxis < corridor.radius - 2) { // 2 unit safety margin
+                        return false; // Inside corridor, safe
+                    }
+                }
+            }
+            
+            // Not in any safe zone, collision detected
+            return true;
+        }
+
+        // Create enhanced cave atmosphere - OPTIMIZED
+        function createCaveAtmosphere(entrance, layout) {
+            const atmosphere = [];
+            
+            // Main ambient lighting
+            const mainLight = new THREE.PointLight(0x4466aa, 2, 100);
+            mainLight.position.set(0, -10, 0);
+            atmosphere.push(mainLight);
+            
+            // Room-specific lighting
+            layout.rooms.forEach(room => {
+                const roomLight = new THREE.PointLight(
+                    getRoomLightColor(room.type),
+                    2.0,
+                    room.radius * 1.5
+                );
+                roomLight.position.set(room.x, room.y + room.radius/3, room.z);
+                atmosphere.push(roomLight);
+                
+                // Room decorations
+                if (room.type === 'crystal') {
+                    // Crystal formations
+                    for (let i = 0; i < 4; i++) {
+                        const crystal = createSimpleCrystal();
+                        const angle = (i / 4) * Math.PI * 2;
+                        const distance = room.radius * 0.6;
+                        crystal.position.set(
+                            room.x + Math.cos(angle) * distance,
+                            room.y - room.radius/2,
+                            room.z + Math.sin(angle) * distance
+                        );
+                        crystal.scale.setScalar(2 + Math.random() * 3);
+                        atmosphere.push(crystal);
+                    }
+                } else if (room.type === 'lake') {
+                    // Water surface
+                    const waterGeometry = new THREE.CircleGeometry(room.radius * 0.8, 24);
+                    const waterMaterial = new THREE.MeshPhongMaterial({
+                        color: 0x001133,
+                        transparent: true,
+                        opacity: 0.8,
+                        shininess: 100
+                    });
+                    const water = new THREE.Mesh(waterGeometry, waterMaterial);
+                    water.rotation.x = -Math.PI / 2;
+                    water.position.set(room.x, room.y - room.radius/2, room.z);
+                    atmosphere.push(water);
+                }
+            });
+            
+            // Corridor lighting
+            layout.connections.forEach((corridor) => {
+                const fromRoom = layout.rooms[corridor.from];
+                const toRoom = layout.rooms[corridor.to];
+                
+                // Single light in middle of corridor
+                const midpoint = fromRoom.center.clone().lerp(toRoom.center, 0.5);
+                const corridorLight = new THREE.PointLight(0x3355aa, 1.0, corridor.radius * 3);
+                corridorLight.position.copy(midpoint);
+                atmosphere.push(corridorLight);
+            });
+            
+            // Atmospheric particles
+            const particleCount = 40;
+            const particleGeometry = new THREE.BufferGeometry();
+            const positions = new Float32Array(particleCount * 3);
+            
+            // Distribute particles in rooms
+            for (let i = 0; i < particleCount; i++) {
+                const roomIndex = Math.floor(Math.random() * layout.rooms.length);
+                const room = layout.rooms[roomIndex];
+                const angle = Math.random() * Math.PI * 2;
+                const distance = Math.random() * room.radius * 0.8;
+                positions[i * 3] = room.x + Math.cos(angle) * distance;
+                positions[i * 3 + 1] = room.y + (Math.random() - 0.5) * room.radius;
+                positions[i * 3 + 2] = room.z + Math.sin(angle) * distance;
+            }
+            
+            particleGeometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+            const particleMaterial = new THREE.PointsMaterial({
+                color: 0x888888,
+                size: 1.0,
+                transparent: true,
+                opacity: 0.6
+            });
+            const ambientParticles = new THREE.Points(particleGeometry, particleMaterial);
+            atmosphere.push(ambientParticles);
+            
+            console.log(`Created cave atmosphere with ${atmosphere.length} elements`);
+            
+            return atmosphere;
+        }
+
+        // Get room-specific light color
+        function getRoomLightColor(roomType) {
+            switch (roomType) {
+                case 'crystal': return 0x4488ff;
+                case 'lake': return 0x2266aa;
+                case 'mushroom': return 0x44aa44;
+                case 'ancient': return 0xaa8844;
+                case 'abyss': return 0x441166;
+                default: return 0x3366aa;
+            }
+        }
+
+        // Helper decoration creation functions
+        function createSimpleCrystal() {
+            const geometry = new THREE.OctahedronGeometry(4);
+            const material = new THREE.MeshPhongMaterial({
+                color: 0x4488ff,
+                transparent: true,
+                opacity: 0.8,
+                shininess: 100
+            });
+            return new THREE.Mesh(geometry, material);
+        }
+
+        // Enter cave system
+        function enterCave() {
+            if (!caveSystem.nearEntrance || caveSystem.inCave) return;
+            
+            console.log('Entering modular cave system...');
+            caveSystem.inCave = true;
+            
+            // Clear marine life
+            sharks.forEach(shark => scene.remove(shark));
+            turtles.forEach(turtle => scene.remove(turtle));
+            jellyfish.forEach(jelly => scene.remove(jelly));
+            sharks.length = 0;
+            turtles.length = 0;
+            jellyfish.length = 0;
+            
+            // Clear torpedoes
+            torpedoes.forEach(torpedo => scene.remove(torpedo));
+            torpedoes.length = 0;
+            
+            // Change environment
+            scene.fog = new THREE.FogExp2(0x221133, 0.004);
+            document.getElementById('environment').textContent = 'Underground Caves';
+            document.getElementById('cave-indicator').style.display = 'none';
+            
+            // Create the modular cave environment
+            const caveLayout = createModularCaveSystem(caveSystem.nearEntrance);
+            
+            // VALIDATED SPAWN LOCATION: Always spawn in entrance room center
+            const entranceRoom = caveLayout.rooms[0]; // First room is always entrance
+            const safeSpawnPosition = {
+                x: entranceRoom.x,
+                y: entranceRoom.y, // Center height of room
+                z: entranceRoom.z
+            };
+            
+            console.log(`Spawning submarine at validated position: (${safeSpawnPosition.x}, ${safeSpawnPosition.y}, ${safeSpawnPosition.z})`);
+            console.log(`Entrance room: center=(${entranceRoom.x}, ${entranceRoom.y}, ${entranceRoom.z}), radius=${entranceRoom.radius}`);
+            
+            // Validate spawn position is safe
+            const testCollision = checkCaveCollision(new THREE.Vector3(safeSpawnPosition.x, safeSpawnPosition.y, safeSpawnPosition.z));
+            console.log(`Spawn position collision test: ${testCollision ? 'COLLISION' : 'SAFE'}`);
+            
+            submarine.position.set(safeSpawnPosition.x, safeSpawnPosition.y, safeSpawnPosition.z);
+            
+            // Reset submarine orientation
+            submarine.rotation.y = 0;
+            
+            // Create exit portal near entrance room but outside it
+            createExitPortal(
+                entranceRoom.x + entranceRoom.radius + 15, 
+                entranceRoom.y + 10, 
+                entranceRoom.z
+            );
+            
+            // Hide terrain
+            environment.chunks.forEach(chunk => {
+                chunk.visible = false;
+            });
+            
+            // Add cave ambient lighting
+            const caveAmbient = new THREE.AmbientLight(0x332244, 0.8);
+            caveAmbient.name = 'caveAmbient';
+            scene.add(caveAmbient);
+            
+            // Camera constraints for caves
+            cameraDistance = Math.min(cameraDistance, 25);
+            
+            console.log('Cave entry complete. Submarine positioned in entrance room.');
+        }
+
+        // Create exit portal
+        function createExitPortal(x, y, z) {
+            const group = new THREE.Group();
+            
+            // Portal ring
+            const portalGeometry = new THREE.RingGeometry(8, 12, 24);
+            const portalMaterial = new THREE.MeshPhongMaterial({ 
+                color: 0x88ccff,
+                transparent: true,
+                opacity: 0.9,
+                side: THREE.DoubleSide,
+                shininess: 100
+            });
+            
+            const portal = new THREE.Mesh(portalGeometry, portalMaterial);
+            portal.position.set(x, y, z);
+            portal.rotation.x = -Math.PI / 2;
+            group.add(portal);
+            
+            // Inner glow
+            const innerGeometry = new THREE.CircleGeometry(8, 24);
+            const innerMaterial = new THREE.MeshPhongMaterial({
+                color: 0x66aaff,
+                transparent: true,
+                opacity: 0.4,
+                side: THREE.DoubleSide,
+                shininess: 100
+            });
+            const inner = new THREE.Mesh(innerGeometry, innerMaterial);
+            inner.position.set(x, y - 0.1, z);
+            inner.rotation.x = -Math.PI / 2;
+            group.add(inner);
+            
+            // Portal light
+            const portalLight = new THREE.PointLight(0x88ccff, 3, 40);
+            portalLight.position.set(x, y, z);
+            group.add(portalLight);
+            
+            scene.add(group);
+            caveSystem.exitPortal = group;
+            caveSystem.exitPortal.position.set(x, y, z);
+            
+            group.userData = {
+                type: 'exit_portal',
+                exitRadius: 12,
+                pulsePhase: 0
+            };
+        }
+
+        // Exit cave system
+        function exitCave() {
+            if (!caveSystem.inCave) return;
+            
+            console.log('Exiting cave system...');
+            caveSystem.inCave = false;
+            
+            // Restore ocean environment
+            scene.fog = new THREE.FogExp2(0x002244, 0.006);
+            document.getElementById('environment').textContent = 'Ocean';
+            
+            // Show terrain
+            environment.chunks.forEach(chunk => {
+                chunk.visible = true;
+            });
+            
+            // Remove cave lighting
+            const caveAmbient = scene.getObjectByName('caveAmbient');
+            if (caveAmbient) {
+                scene.remove(caveAmbient);
+            }
+            
+            // Clean up cave system
+            if (caveSystem.loadedCave) {
+                scene.remove(caveSystem.loadedCave);
+                caveSystem.loadedCave.traverse((child) => {
+                    if (child.geometry) child.geometry.dispose();
+                    if (child.material) {
+                        if (child.material.map) child.material.map.dispose();
+                        child.material.dispose();
+                    }
+                });
+                caveSystem.loadedCave = null;
+            }
+            
+            // Remove exit portal
+            if (caveSystem.exitPortal) {
+                scene.remove(caveSystem.exitPortal);
+                caveSystem.exitPortal.traverse((child) => {
+                    if (child.geometry) child.geometry.dispose();
+                    if (child.material) child.material.dispose();
+                });
+                caveSystem.exitPortal = null;
+            }
+            
+            // Clear cave data
+            caveSystem.rooms = [];
+            caveSystem.corridors = [];
+            caveSystem.roomMeshes = [];
+            caveSystem.corridorMeshes = [];
+            caveSystem.allCaveMeshes = [];
+            
+            // Position submarine above entrance
+            if (caveSystem.nearEntrance) {
+                submarine.position.set(
+                    caveSystem.nearEntrance.x,
+                    caveSystem.nearEntrance.y + 15,
+                    caveSystem.nearEntrance.z
+                );
+            }
+            
+            // Restore camera constraints
+            cameraDistance = Math.max(cameraDistance, 15);
+            
+            console.log('Cave exit complete.');
+        }
+
+        // Check exit portal proximity
+        function checkExitProximity() {
+            if (!caveSystem.inCave || !caveSystem.exitPortal) return;
+            
+            const distance = submarine.position.distanceTo(caveSystem.exitPortal.position);
+            
+            const indicator = document.getElementById('cave-indicator');
+            if (distance < 20) {
+                indicator.style.display = 'block';
+                indicator.textContent = `🚪 Exit Portal ${distance.toFixed(1)}m away - Press C to Exit`;
+            } else {
+                indicator.style.display = 'none';
+            }
+        }
+
         // Create submarine
         function createSubmarine() {
             const group = new THREE.Group();
             
             // Main body
             const bodyGeometry = new THREE.CylinderGeometry(1.5, 1.2, 12, 16);
-            const bodyMaterial = new THREE.MeshStandardMaterial({ 
+            const bodyMaterial = new THREE.MeshPhongMaterial({ 
                 color: 0xffdd00,
-                metalness: 0.7,
-                roughness: 0.3
+                shininess: 100
             });
             const body = new THREE.Mesh(bodyGeometry, bodyMaterial);
             body.rotation.x = Math.PI / 2;
@@ -418,10 +1374,9 @@
             
             // Periscope
             const periscopeGeometry = new THREE.CylinderGeometry(0.1, 0.1, 1.5, 6);
-            const periscopeMaterial = new THREE.MeshStandardMaterial({ 
+            const periscopeMaterial = new THREE.MeshPhongMaterial({ 
                 color: 0x333333,
-                metalness: 0.8,
-                roughness: 0.2
+                shininess: 100
             });
             const periscope = new THREE.Mesh(periscopeGeometry, periscopeMaterial);
             periscope.position.set(0.3, 3, 0);
@@ -430,10 +1385,9 @@
             // Propeller
             const propGroup = new THREE.Group();
             const propBladeGeometry = new THREE.BoxGeometry(0.1, 2, 0.5);
-            const propMaterial = new THREE.MeshStandardMaterial({ 
+            const propMaterial = new THREE.MeshPhongMaterial({ 
                 color: 0x666666,
-                metalness: 0.8,
-                roughness: 0.3
+                shininess: 100
             });
             
             for (let i = 0; i < 3; i++) {
@@ -447,12 +1401,9 @@
             
             // Windows
             const windowGeometry = new THREE.SphereGeometry(0.3, 8, 8);
-            const windowMaterial = new THREE.MeshStandardMaterial({ 
+            const windowMaterial = new THREE.MeshPhongMaterial({ 
                 color: 0x88ccff,
-                emissive: 0x88ccff,
-                emissiveIntensity: 0.2,
-                metalness: 0.1,
-                roughness: 0.1
+                shininess: 100
             });
             
             for (let i = 0; i < 5; i++) {
@@ -464,10 +1415,9 @@
             
             // Torpedo tubes
             const tubeGeometry = new THREE.CylinderGeometry(0.4, 0.4, 1, 8);
-            const tubeMaterial = new THREE.MeshStandardMaterial({ 
+            const tubeMaterial = new THREE.MeshPhongMaterial({ 
                 color: 0x333333,
-                metalness: 0.8,
-                roughness: 0.3
+                shininess: 100
             });
             
             const leftTube = new THREE.Mesh(tubeGeometry, tubeMaterial);
@@ -525,10 +1475,9 @@
             
             // Eyes with menacing glow
             const eyeGeometry = new THREE.SphereGeometry(0.2, 8, 8);
-            const eyeMaterial = new THREE.MeshBasicMaterial({ 
+            const eyeMaterial = new THREE.MeshPhongMaterial({ 
                 color: 0xff4444,
-                emissive: 0xff2222,
-                emissiveIntensity: 0.6
+                shininess: 100
             });
             const leftEye = new THREE.Mesh(eyeGeometry, eyeMaterial);
             leftEye.position.set(-0.5, 0.4, 2.5);
@@ -540,7 +1489,7 @@
             
             // Add some scars/details
             const scarGeometry = new THREE.BoxGeometry(0.1, 0.1, 1);
-            const scarMaterial = new THREE.MeshBasicMaterial({ color: 0x222222 });
+            const scarMaterial = new THREE.MeshPhongMaterial({ color: 0x222222 });
             const scar = new THREE.Mesh(scarGeometry, scarMaterial);
             scar.position.set(0.3, 0.8, 1);
             scar.rotation.z = 0.5;
@@ -617,7 +1566,7 @@
             
             // Eyes
             const eyeGeometry = new THREE.SphereGeometry(0.15, 6, 6);
-            const eyeMaterial = new THREE.MeshBasicMaterial({ color: 0x000000 });
+            const eyeMaterial = new THREE.MeshPhongMaterial({ color: 0x000000 });
             const leftEye = new THREE.Mesh(eyeGeometry, eyeMaterial);
             leftEye.position.set(-0.4, 0.3, 3);
             group.add(leftEye);
@@ -652,8 +1601,6 @@
                 color: 0x88ccff,
                 transparent: true,
                 opacity: 0.6,
-                emissive: 0x2266aa,
-                emissiveIntensity: 0.3,
                 shininess: 100
             });
             const bell = new THREE.Mesh(bellGeometry, bellMaterial);
@@ -681,8 +1628,7 @@
                         color: 0x6699cc,
                         transparent: true,
                         opacity: 0.7,
-                        emissive: 0x1144aa,
-                        emissiveIntensity: 0.2
+                        shininess: 50
                     });
                     const segment = new THREE.Mesh(segmentGeometry, segmentMaterial);
                     segment.position.set(0, -(j + 1) * 0.8, 0);
@@ -717,111 +1663,14 @@
             return group;
         }
 
-        // Create shipwreck
-        function createShipwreck() {
-            const group = new THREE.Group();
-            
-            // Hull
-            const hullGeometry = new THREE.CylinderGeometry(4, 3, 40, 16);
-            hullGeometry.scale(1, 0.6, 1);
-            const shipMaterial = new THREE.MeshPhongMaterial({ 
-                color: 0x3d2914,
-                roughness: 0.9
-            });
-            const hull = new THREE.Mesh(hullGeometry, shipMaterial);
-            hull.rotation.z = Math.PI / 2;
-            hull.position.y = 2;
-            group.add(hull);
-            
-            // Deck
-            const deckGeometry = new THREE.BoxGeometry(38, 0.5, 7);
-            const deck = new THREE.Mesh(deckGeometry, shipMaterial);
-            deck.position.set(0, 4.5, 0);
-            group.add(deck);
-            
-            // Broken masts
-            const mastGeometry = new THREE.CylinderGeometry(0.3, 0.4, 25, 8);
-            const mastMaterial = new THREE.MeshPhongMaterial({ color: 0x2d1810 });
-            
-            const mast1 = new THREE.Mesh(mastGeometry, mastMaterial);
-            mast1.position.set(-10, 17, 0);
-            mast1.rotation.z = 0.3; // Broken angle
-            group.add(mast1);
-            
-            const mast2 = new THREE.Mesh(mastGeometry, mastMaterial);
-            mast2.position.set(8, 12, 0);
-            mast2.rotation.z = -0.4;
-            mast2.scale.y = 0.6; // Broken shorter
-            group.add(mast2);
-            
-            // Cabin
-            const cabinGeometry = new THREE.BoxGeometry(12, 6, 8);
-            const cabin = new THREE.Mesh(cabinGeometry, shipMaterial);
-            cabin.position.set(5, 8, 0);
-            group.add(cabin);
-            
-            // Holes in hull
-            const holeGeometry = new THREE.SphereGeometry(2, 8, 8);
-            const holeMaterial = new THREE.MeshBasicMaterial({ 
-                color: 0x000000,
-                transparent: true,
-                opacity: 0.8
-            });
-            const hole1 = new THREE.Mesh(holeGeometry, holeMaterial);
-            hole1.position.set(-8, 1, 3);
-            hole1.scale.set(1, 0.5, 1);
-            group.add(hole1);
-            
-            const hole2 = new THREE.Mesh(holeGeometry, holeMaterial);
-            hole2.position.set(12, 1.5, -2);
-            hole2.scale.set(0.8, 0.6, 0.8);
-            group.add(hole2);
-            
-            // Scattered cargo/treasure
-            for (let i = 0; i < 5; i++) {
-                const barrelGeometry = new THREE.CylinderGeometry(0.8, 0.8, 1.5, 8);
-                const barrelMaterial = new THREE.MeshPhongMaterial({ color: 0x4a3728 });
-                const barrel = new THREE.Mesh(barrelGeometry, barrelMaterial);
-                barrel.position.set(
-                    (Math.random() - 0.5) * 30,
-                    Math.random() * 2,
-                    (Math.random() - 0.5) * 15
-                );
-                barrel.rotation.set(
-                    Math.random() * 0.5,
-                    Math.random() * Math.PI,
-                    Math.random() * 0.5
-                );
-                group.add(barrel);
-            }
-            
-            // Marine growth simulation
-            for (let i = 0; i < 20; i++) {
-                const growthGeometry = new THREE.SphereGeometry(0.3 + Math.random() * 0.5, 6, 6);
-                const growthMaterial = new THREE.MeshPhongMaterial({ 
-                    color: new THREE.Color(0.1, 0.3 + Math.random() * 0.2, 0.1)
-                });
-                const growth = new THREE.Mesh(growthGeometry, growthMaterial);
-                growth.position.set(
-                    (Math.random() - 0.5) * 35,
-                    Math.random() * 8,
-                    (Math.random() - 0.5) * 12
-                );
-                group.add(growth);
-            }
-            
-            return group;
-        }
-
         // Create torpedo
         function createTorpedo() {
             const group = new THREE.Group();
             
             const bodyGeometry = new THREE.CylinderGeometry(0.3, 0.25, 3, 8);
-            const bodyMaterial = new THREE.MeshStandardMaterial({ 
+            const bodyMaterial = new THREE.MeshPhongMaterial({ 
                 color: 0x444444,
-                metalness: 0.8,
-                roughness: 0.2
+                shininess: 100
             });
             const body = new THREE.Mesh(bodyGeometry, bodyMaterial);
             body.rotation.x = Math.PI / 2;
@@ -845,7 +1694,7 @@
             const group = new THREE.Group();
             
             const explosionGeometry = new THREE.SphereGeometry(1, 8, 8);
-            const explosionMaterial = new THREE.MeshBasicMaterial({ 
+            const explosionMaterial = new THREE.MeshPhongMaterial({ 
                 color: 0xffaa00,
                 transparent: true,
                 opacity: 0.8
@@ -856,7 +1705,7 @@
             // Particles
             for (let i = 0; i < 12; i++) {
                 const particleGeometry = new THREE.SphereGeometry(0.2, 4, 4);
-                const particleMaterial = new THREE.MeshBasicMaterial({ 
+                const particleMaterial = new THREE.MeshPhongMaterial({ 
                     color: 0xff6600,
                     transparent: true,
                     opacity: 0.7
@@ -931,17 +1780,29 @@
                 
                 torpedo.position.add(userData.velocity);
                 
-                const terrainHeight = getHeight(torpedo.position.x, torpedo.position.z);
-                const hitTerrain = torpedo.position.y <= terrainHeight + 1;
-                const expired = currentTime - userData.spawnTime > torpedoLifetime;
                 let hit = false;
+                
+                // Terrain collision (only in ocean)
+                if (!caveSystem.inCave) {
+                    const terrainHeight = getHeight(torpedo.position.x, torpedo.position.z);
+                    if (torpedo.position.y <= terrainHeight + 1) {
+                        hit = true;
+                    }
+                } else {
+                    // Cave wall collision
+                    if (checkCaveCollision(torpedo.position)) {
+                        hit = true;
+                    }
+                }
+                
+                const expired = currentTime - userData.spawnTime > torpedoLifetime;
                 
                 // Check shark collisions
                 sharks.forEach((shark, sharkIndex) => {
                     if (shark.userData.health > 0) {
                         const distance = torpedo.position.distanceTo(shark.position);
                         if (distance < 4) {
-                            shark.userData.health -= 40; // One hit kill
+                            shark.userData.health -= 40;
                             if (shark.userData.health <= 0) {
                                 scene.remove(shark);
                                 sharks.splice(sharkIndex, 1);
@@ -951,14 +1812,13 @@
                     }
                 });
                 
-                if (hitTerrain || expired || hit) {
+                if (hit || expired) {
                     createExplosion(torpedo.position);
                     
                     // Scare marine life
                     [...turtles, ...jellyfish].forEach(creature => {
                         const distance = torpedo.position.distanceTo(creature.position);
                         if (distance < 15) {
-                            // Make them flee from explosion
                             const fleeDirection = new THREE.Vector3()
                                 .subVectors(creature.position, torpedo.position)
                                 .normalize()
@@ -1178,12 +2038,17 @@
             document.getElementById('game-over').style.display = 'block';
         }
 
-        // Spawn marine life
+        // Spawn marine life - Optimized with adaptive spawning
         function spawnMarineLife() {
+            if (caveSystem.inCave) return; // No marine life in caves
+            
             const subPos = submarine.position;
             
+            // Adaptive spawning based on performance
+            const spawnMultiplier = adaptiveQuality;
+            
             // Spawn sharks
-            if (sharks.length < 3 && Math.random() < 0.008) {
+            if (sharks.length < Math.floor(3 * spawnMultiplier) && Math.random() < 0.006 * spawnMultiplier) {
                 const shark = createShark();
                 const angle = Math.random() * Math.PI * 2;
                 const distance = 35 + Math.random() * 20;
@@ -1197,7 +2062,7 @@
             }
             
             // Spawn turtles
-            if (turtles.length < 2 && Math.random() < 0.004) {
+            if (turtles.length < Math.floor(2 * spawnMultiplier) && Math.random() < 0.003 * spawnMultiplier) {
                 const turtle = createTurtle();
                 const angle = Math.random() * Math.PI * 2;
                 const distance = 20 + Math.random() * 25;
@@ -1213,7 +2078,7 @@
             }
             
             // Spawn jellyfish
-            if (jellyfish.length < 4 && Math.random() < 0.006) {
+            if (jellyfish.length < Math.floor(4 * spawnMultiplier) && Math.random() < 0.004 * spawnMultiplier) {
                 const jelly = createJellyfish();
                 const angle = Math.random() * Math.PI * 2;
                 const distance = 15 + Math.random() * 20;
@@ -1301,9 +2166,10 @@
             geometry.computeVertexNormals();
             geometry.attributes.position.needsUpdate = true;
             
-            const material = new THREE.MeshLambertMaterial({ 
+            const material = new THREE.MeshPhongMaterial({ 
                 vertexColors: true,
-                side: THREE.DoubleSide
+                side: THREE.DoubleSide,
+                shininess: 30
             });
             
             const chunk = new THREE.Mesh(geometry, material);
@@ -1332,9 +2198,10 @@
                 }
                 
                 const tubeGeometry = new THREE.TubeGeometry(curve, segments * 2, 0.2 + Math.random() * 0.3, 6, false);
-                const kelpMaterial = new THREE.MeshLambertMaterial({ 
+                const kelpMaterial = new THREE.MeshPhongMaterial({ 
                     color: new THREE.Color(0.1 + Math.random() * 0.1, 0.3 + Math.random() * 0.2, 0.1),
-                    side: THREE.DoubleSide
+                    side: THREE.DoubleSide,
+                    shininess: 20
                 });
                 const kelpMesh = new THREE.Mesh(tubeGeometry, kelpMaterial);
                 
@@ -1433,14 +2300,13 @@
                 }
                 rockGeometry.computeVertexNormals();
                 
-                const rockMaterial = new THREE.MeshStandardMaterial({ 
+                const rockMaterial = new THREE.MeshPhongMaterial({ 
                     color: new THREE.Color(
                         0.3 + Math.random() * 0.2,
                         0.3 + Math.random() * 0.2,
                         0.3 + Math.random() * 0.1
                     ),
-                    roughness: 0.9,
-                    metalness: 0.1
+                    shininess: 10
                 });
                 
                 const rock = new THREE.Mesh(rockGeometry, rockMaterial);
@@ -1463,69 +2329,193 @@
             return group;
         }
 
+        // Create shipwreck
+        function createShipwreck() {
+            const group = new THREE.Group();
+            
+            // Hull
+            const hullGeometry = new THREE.CylinderGeometry(4, 3, 40, 16);
+            hullGeometry.scale(1, 0.6, 1);
+            const shipMaterial = new THREE.MeshPhongMaterial({ 
+                color: 0x3d2914,
+                shininess: 10
+            });
+            const hull = new THREE.Mesh(hullGeometry, shipMaterial);
+            hull.rotation.z = Math.PI / 2;
+            hull.position.y = 2;
+            group.add(hull);
+            
+            // Deck
+            const deckGeometry = new THREE.BoxGeometry(38, 0.5, 7);
+            const deck = new THREE.Mesh(deckGeometry, shipMaterial);
+            deck.position.set(0, 4.5, 0);
+            group.add(deck);
+            
+            // Broken masts
+            const mastGeometry = new THREE.CylinderGeometry(0.3, 0.4, 25, 8);
+            const mastMaterial = new THREE.MeshPhongMaterial({ color: 0x2d1810 });
+            
+            const mast1 = new THREE.Mesh(mastGeometry, mastMaterial);
+            mast1.position.set(-10, 17, 0);
+            mast1.rotation.z = 0.3;
+            group.add(mast1);
+            
+            const mast2 = new THREE.Mesh(mastGeometry, mastMaterial);
+            mast2.position.set(8, 12, 0);
+            mast2.rotation.z = -0.4;
+            mast2.scale.y = 0.6;
+            group.add(mast2);
+            
+            // Cabin
+            const cabinGeometry = new THREE.BoxGeometry(12, 6, 8);
+            const cabin = new THREE.Mesh(cabinGeometry, shipMaterial);
+            cabin.position.set(5, 8, 0);
+            group.add(cabin);
+            
+            // Holes in hull
+            const holeGeometry = new THREE.SphereGeometry(2, 8, 8);
+            const holeMaterial = new THREE.MeshPhongMaterial({ 
+                color: 0x000000,
+                transparent: true,
+                opacity: 0.8
+            });
+            const hole1 = new THREE.Mesh(holeGeometry, holeMaterial);
+            hole1.position.set(-8, 1, 3);
+            hole1.scale.set(1, 0.5, 1);
+            group.add(hole1);
+            
+            const hole2 = new THREE.Mesh(holeGeometry, holeMaterial);
+            hole2.position.set(12, 1.5, -2);
+            hole2.scale.set(0.8, 0.6, 0.8);
+            group.add(hole2);
+            
+            // Scattered cargo/treasure
+            for (let i = 0; i < 5; i++) {
+                const barrelGeometry = new THREE.CylinderGeometry(0.8, 0.8, 1.5, 8);
+                const barrelMaterial = new THREE.MeshPhongMaterial({ color: 0x4a3728 });
+                const barrel = new THREE.Mesh(barrelGeometry, barrelMaterial);
+                barrel.position.set(
+                    (Math.random() - 0.5) * 30,
+                    Math.random() * 2,
+                    (Math.random() - 0.5) * 15
+                );
+                barrel.rotation.set(
+                    Math.random() * 0.5,
+                    Math.random() * Math.PI,
+                    Math.random() * 0.5
+                );
+                group.add(barrel);
+            }
+            
+            // Marine growth simulation
+            for (let i = 0; i < 20; i++) {
+                const growthGeometry = new THREE.SphereGeometry(0.3 + Math.random() * 0.5, 6, 6);
+                const growthMaterial = new THREE.MeshPhongMaterial({ 
+                    color: new THREE.Color(0.1, 0.3 + Math.random() * 0.2, 0.1)
+                });
+                const growth = new THREE.Mesh(growthGeometry, growthMaterial);
+                growth.position.set(
+                    (Math.random() - 0.5) * 35,
+                    Math.random() * 8,
+                    (Math.random() - 0.5) * 12
+                );
+                group.add(growth);
+            }
+            
+            return group;
+        }
+
         // Generate cell content with performance optimization
         function generateCell(cellX, cellZ) {
             const cellKey = `${cellX}-${cellZ}`;
             if (generatedCells.has(cellKey)) return;
             
             generatedCells.set(cellKey, true);
-            const objects = { kelp: [], fish: [], rocks: [], shipwrecks: [] };
+            const objects = { kelp: [], fish: [], rocks: [], shipwrecks: [], caves: [] };
             cellObjects.set(cellKey, objects);
             
             const centerX = cellX * cellSize;
             const centerZ = cellZ * cellSize;
             
-            // Reduce generation complexity for smoother loading
-            const terrainHeight = getHeight(centerX, centerZ);
+            // Generate cave entrances in this cell
+            const entrances = findCaveEntrances(centerX, centerZ, cellSize / 2);
             
-            // Generate kelp forests (reduced probability)
-            if (terrainHeight < -20 && Math.random() < 0.5) { // Reduced from 0.7
-                const kelp = createKelp(centerX, centerZ);
-                kelp.position.set(
-                    centerX + (Math.random() - 0.5) * cellSize * 0.8,
-                    terrainHeight,
-                    centerZ + (Math.random() - 0.5) * cellSize * 0.8
-                );
-                scene.add(kelp);
-                objects.kelp.push(kelp);
-                objectCount++;
+            // Force a cave in every 4th cell for testing
+            if (entrances.length === 0 && (cellX % 4 === 0 && cellZ % 4 === 0)) {
+                const forcedEntrance = {
+                    x: centerX + (Math.random() - 0.5) * cellSize * 0.6,
+                    z: centerZ + (Math.random() - 0.5) * cellSize * 0.6,
+                    y: getHeight(centerX, centerZ) - 5,
+                    key: `forced-${cellX}-${cellZ}`
+                };
+                entrances.push(forcedEntrance);
             }
             
-            // Generate fish schools (reduced probability)
-            if (Math.random() < 0.3) { // Reduced from 0.5
-                const fish = createFishSchool(centerX, centerZ);
-                const fishHeight = getHeight(centerX, centerZ) + 10 + Math.random() * 20;
-                fish.position.set(centerX, fishHeight, centerZ);
-                scene.add(fish);
-                objects.fish.push(fish);
-                objectCount++;
-            }
+            entrances.forEach(entrance => {
+                if (!caveSystem.entrances.has(entrance.key)) {
+                    const caveEntrance = createCaveEntrance(entrance.x, entrance.z, entrance.y);
+                    caveEntrance.position.set(entrance.x, entrance.y, entrance.z);
+                    scene.add(caveEntrance);
+                    objects.caves.push(caveEntrance);
+                    caveSystem.entrances.set(entrance.key, entrance);
+                    objectCount++;
+                    console.log(`Created cave entrance at ${entrance.x.toFixed(1)}, ${entrance.z.toFixed(1)}`);
+                }
+            });
             
-            // Generate rock formations (reduced probability)
-            if (Math.abs(terrainHeight + 10) < 20 && Math.random() < 0.4) { // Reduced from 0.6
-                const rocks = createRockFormation(centerX, centerZ);
-                rocks.position.set(
-                    centerX + (Math.random() - 0.5) * cellSize * 0.8,
-                    terrainHeight,
-                    centerZ + (Math.random() - 0.5) * cellSize * 0.8
-                );
-                scene.add(rocks);
-                objects.rocks.push(rocks);
-                objectCount++;
-            }
-            
-            // Generate shipwrecks (keep rare)
-            if (Math.random() < 0.05) {
-                const shipwreck = createShipwreck();
-                shipwreck.position.set(
-                    centerX + (Math.random() - 0.5) * cellSize * 0.6,
-                    terrainHeight,
-                    centerZ + (Math.random() - 0.5) * cellSize * 0.6
-                );
-                shipwreck.rotation.y = Math.random() * Math.PI * 2;
-                scene.add(shipwreck);
-                objects.shipwrecks.push(shipwreck);
-                objectCount++;
+            // Only generate ocean content if not in caves
+            if (!caveSystem.inCave) {
+                const terrainHeight = getHeight(centerX, centerZ);
+                
+                // Generate kelp forests
+                if (terrainHeight < -20 && Math.random() < 0.3 * adaptiveQuality) {
+                    const kelp = createKelp(centerX, centerZ);
+                    kelp.position.set(
+                        centerX + (Math.random() - 0.5) * cellSize * 0.8,
+                        terrainHeight,
+                        centerZ + (Math.random() - 0.5) * cellSize * 0.8
+                    );
+                    scene.add(kelp);
+                    objects.kelp.push(kelp);
+                    objectCount++;
+                }
+                
+                // Generate fish schools
+                if (Math.random() < 0.2 * adaptiveQuality) {
+                    const fish = createFishSchool(centerX, centerZ);
+                    const fishHeight = getHeight(centerX, centerZ) + 10 + Math.random() * 20;
+                    fish.position.set(centerX, fishHeight, centerZ);
+                    scene.add(fish);
+                    objects.fish.push(fish);
+                    objectCount++;
+                }
+                
+                // Generate rock formations
+                if (Math.abs(terrainHeight + 10) < 20 && Math.random() < 0.25 * adaptiveQuality) {
+                    const rocks = createRockFormation(centerX, centerZ);
+                    rocks.position.set(
+                        centerX + (Math.random() - 0.5) * cellSize * 0.8,
+                        terrainHeight,
+                        centerZ + (Math.random() - 0.5) * cellSize * 0.8
+                    );
+                    scene.add(rocks);
+                    objects.rocks.push(rocks);
+                    objectCount++;
+                }
+                
+                // Generate shipwrecks
+                if (Math.random() < 0.03 * adaptiveQuality) {
+                    const shipwreck = createShipwreck();
+                    shipwreck.position.set(
+                        centerX + (Math.random() - 0.5) * cellSize * 0.6,
+                        terrainHeight,
+                        centerZ + (Math.random() - 0.5) * cellSize * 0.6
+                    );
+                    shipwreck.rotation.y = Math.random() * Math.PI * 2;
+                    scene.add(shipwreck);
+                    objects.shipwrecks.push(shipwreck);
+                    objectCount++;
+                }
             }
         }
 
@@ -1558,19 +2548,20 @@
                 lastChunkZ: null,
                 updateCounter: 0,
                 updatePosition: function(submarinePosition) {
+                    // Only update terrain in ocean mode
+                    if (caveSystem.inCave) return;
+                    
                     const centerChunkX = Math.round(submarinePosition.x / chunkSize);
                     const centerChunkZ = Math.round(submarinePosition.z / chunkSize);
                     
                     let index = 0;
                     const halfChunks = Math.floor(chunksPerSide / 2);
                     
-                    // Update terrain chunks more gradually
                     for (let x = 0; x < chunksPerSide; x++) {
                         for (let z = 0; z < chunksPerSide; z++) {
                             const chunkX = centerChunkX + (x - halfChunks);
                             const chunkZ = centerChunkZ + (z - halfChunks);
                             
-                            // Only update if position actually changed
                             const chunk = terrainChunks[index];
                             const expectedX = chunkX * chunkSize;
                             const expectedZ = chunkZ * chunkSize;
@@ -1581,7 +2572,6 @@
                                 chunk.userData.chunkX = chunkX;
                                 chunk.userData.chunkZ = chunkZ;
                                 
-                                // Update geometry only when necessary
                                 this.updateChunkGeometry(chunk, chunkX, chunkZ, chunkSize);
                             }
                             
@@ -1609,7 +2599,6 @@
                         maxHeight = Math.max(maxHeight, height);
                     }
                     
-                    // Update colors
                     for (let i = 0; i < vertices.length; i += 3) {
                         const height = vertices[i + 1];
                         const normalizedHeight = (height - minHeight) / (maxHeight - minHeight);
@@ -1654,9 +2643,9 @@
             const subCellZ = Math.floor(subPosition.z / cellSize);
             const activeCells = new Set();
             
-            // Limit generation per frame to prevent freezing
+            // Adaptive generation based on performance
             let generationCount = 0;
-            const maxGenerationsPerFrame = 2; // Limit to 2 new cells per frame
+            const maxGenerationsPerFrame = Math.floor(1 * adaptiveQuality) + 1;
             
             for (let dx = -viewRadius; dx <= viewRadius; dx++) {
                 for (let dz = -viewRadius; dz <= viewRadius; dz++) {
@@ -1672,13 +2661,13 @@
                 }
             }
             
-            // Remove distant cells (also limit cleanup per frame)
+            // Adaptive cleanup
             let cleanupCount = 0;
-            const maxCleanupPerFrame = 3;
+            const maxCleanupPerFrame = Math.floor(2 * adaptiveQuality) + 1;
             
             for (const [cellKey, objects] of cellObjects) {
                 if (!activeCells.has(cellKey) && cleanupCount < maxCleanupPerFrame) {
-                    [...objects.kelp, ...objects.fish, ...objects.rocks, ...objects.shipwrecks].forEach(obj => {
+                    [...objects.kelp, ...objects.fish, ...objects.rocks, ...objects.shipwrecks, ...objects.caves].forEach(obj => {
                         scene.remove(obj);
                         objectCount--;
                     });
@@ -1689,9 +2678,40 @@
             }
         }
 
-        // Animate ocean life
+        // Performance monitoring and adaptive quality
+        function checkPerformance(currentTime) {
+            frameCount++;
+            
+            if (currentTime - lastPerformanceCheck > 2000) {
+                const fps = frameCount / 2;
+                frameCount = 0;
+                lastPerformanceCheck = currentTime;
+                
+                // Adaptive quality adjustment
+                if (fps < 30) {
+                    adaptiveQuality = Math.max(0.3, adaptiveQuality - 0.1);
+                    console.log(`Performance low (${fps.toFixed(1)} FPS), reducing quality to ${adaptiveQuality.toFixed(1)}`);
+                } else if (fps > 50) {
+                    adaptiveQuality = Math.min(1.0, adaptiveQuality + 0.05);
+                }
+                
+                // Adjust terrain update frequency based on performance
+                if (fps < 40) {
+                    environment.updateInterval = 60;
+                } else {
+                    environment.updateInterval = 30;
+                }
+            }
+        }
+
+        // Animate ocean life - Optimized with frame skipping
         function animateOceanLife(time) {
+            if (caveSystem.inCave) return;
+            
             const t = time * 0.001;
+            
+            // Skip some animation frames for performance
+            if (frameCount % Math.ceil(2 / adaptiveQuality) !== 0) return;
             
             for (const [cellKey, objects] of cellObjects) {
                 // Animate kelp swaying
@@ -1722,6 +2742,28 @@
                         });
                     }
                 });
+
+                // Animate cave entrance particles and beacons
+                if (frameCount % 4 === 0) {
+                    objects.caves.forEach(caveEntrance => {
+                        if (caveEntrance.userData && caveEntrance.userData.particles) {
+                            const particles = caveEntrance.userData.particles;
+                            const positions = particles.geometry.attributes.position.array;
+                            
+                            for (let i = 0; i < positions.length; i += 3) {
+                                positions[i + 1] += Math.sin(t + i) * 0.02;
+                            }
+                            particles.geometry.attributes.position.needsUpdate = true;
+                        }
+                        
+                        // Animate beacon pulsing
+                        if (caveEntrance.userData && caveEntrance.userData.beacon) {
+                            caveEntrance.userData.pulsePhase += 0.05;
+                            const pulse = Math.sin(caveEntrance.userData.pulsePhase) * 0.3 + 0.7;
+                            caveEntrance.userData.beacon.scale.setScalar(0.8 + pulse * 0.4);
+                        }
+                    });
+                }
             }
         }
 
@@ -1730,8 +2772,11 @@
             if (isGameOver) return;
             
             const speed = 0.5;
-            const turnSpeed = 0.05; // Increased from 0.03 for better combat maneuverability
+            const turnSpeed = 0.05;
             const verticalSpeed = 0.3;
+            
+            // Store previous position for collision checking
+            const prevPosition = submarine.position.clone();
             
             if (moveForward) {
                 const direction = new THREE.Vector3(0, 0, 1).applyQuaternion(submarine.quaternion);
@@ -1750,33 +2795,59 @@
                 submarine.propeller.rotation.z += 0.3 * (moveForward ? 1 : -1);
             }
             
-            const terrainHeight = getHeight(submarine.position.x, submarine.position.z);
-            submarine.position.y = Math.max(submarine.position.y, terrainHeight + 3);
-            
-            // Update terrain position more smoothly to prevent teleporting
-            // Only update terrain occasionally, not every frame
-            if (!environment.updateCounter) environment.updateCounter = 0;
-            environment.updateCounter++;
-            
-            // Update terrain every 30 frames (about twice per second) instead of every frame
-            if (environment.updateCounter >= 30) {
-                const currentChunkX = Math.round(submarine.position.x / environment.chunkSize);
-                const currentChunkZ = Math.round(submarine.position.z / environment.chunkSize);
-                
-                // Only update terrain if we've moved to a different chunk
-                if (!environment.lastChunkX || !environment.lastChunkZ || 
-                    currentChunkX !== environment.lastChunkX || 
-                    currentChunkZ !== environment.lastChunkZ) {
-                    environment.updatePosition(submarine.position);
-                    environment.lastChunkX = currentChunkX;
-                    environment.lastChunkZ = currentChunkZ;
+            // Collision detection based on environment
+            if (caveSystem.inCave) {
+                // Cave collision detection
+                if (checkCaveCollision(submarine.position)) {
+                    // Restore previous position if collision detected
+                    submarine.position.copy(prevPosition);
                 }
-                environment.updateCounter = 0;
+            } else {
+                // Ocean terrain collision
+                const terrainHeight = getHeight(submarine.position.x, submarine.position.z);
+                submarine.position.y = Math.max(submarine.position.y, terrainHeight + 3);
+                
+                // Update terrain - Adaptive frequency
+                if (!environment.updateCounter) environment.updateCounter = 0;
+                environment.updateCounter++;
+                
+                // Adaptive terrain update frequency
+                const updateInterval = environment.updateInterval || 30;
+                if (environment.updateCounter >= updateInterval) {
+                    const currentChunkX = Math.round(submarine.position.x / environment.chunkSize);
+                    const currentChunkZ = Math.round(submarine.position.z / environment.chunkSize);
+                    
+                    if (!environment.lastChunkX || !environment.lastChunkZ || 
+                        currentChunkX !== environment.lastChunkX || 
+                        currentChunkZ !== environment.lastChunkZ) {
+                        environment.updatePosition(submarine.position);
+                        environment.lastChunkX = currentChunkX;
+                        environment.lastChunkZ = currentChunkZ;
+                    }
+                    environment.updateCounter = 0;
+                }
             }
         }
 
-        // Update camera
+        // Update camera with enhanced constraints for caves
         function updateCamera() {
+            // Cave-specific camera constraints
+            if (caveSystem.inCave) {
+                // Closer camera in caves for better navigation
+                cameraDistance = Math.min(cameraDistance, 30);
+                cameraDistance = Math.max(cameraDistance, 8);
+                
+                // More restrictive vertical angle in caves
+                cameraAngleV = Math.max(-Math.PI/3, Math.min(Math.PI/3, cameraAngleV));
+            } else {
+                // Ocean camera constraints
+                cameraDistance = Math.max(cameraDistance, 5);
+                cameraDistance = Math.min(cameraDistance, 100);
+                
+                // Standard vertical angle limits
+                cameraAngleV = Math.max(-Math.PI/2 + 0.1, Math.min(Math.PI/2 - 0.1, cameraAngleV));
+            }
+            
             const cameraOffset = new THREE.Vector3(
                 Math.sin(cameraAngleH) * Math.cos(cameraAngleV) * cameraDistance,
                 Math.sin(cameraAngleV) * cameraDistance,
@@ -1797,6 +2868,7 @@
             document.getElementById('jellyfish').textContent = jellyfish.length;
             document.getElementById('torpedoes').textContent = torpedoes.length;
             document.getElementById('objects').textContent = objectCount;
+            document.getElementById('caves-found').textContent = `${caveSystem.entrances.size} | In Cave: ${caveSystem.inCave ? 'Yes' : 'No'}`;
         }
 
         // Setup controls
@@ -1813,6 +2885,28 @@
                     case 'ShiftRight': sink = true; break;
                     case 'KeyQ': fireTorpedo('left'); break;
                     case 'KeyE': fireTorpedo('right'); break;
+                    case 'KeyC':
+                        if (caveSystem.inCave) {
+                            // Try to exit if near exit portal
+                            if (caveSystem.exitPortal) {
+                                const distance = submarine.position.distanceTo(caveSystem.exitPortal.position);
+                                console.log('C pressed in cave, distance to portal:', distance);
+                                if (distance < 20) {
+                                    exitCave();
+                                } else {
+                                    console.log('Too far from exit portal');
+                                }
+                            }
+                        } else {
+                            // Try to enter cave
+                            console.log('C pressed, trying to enter cave. Near entrance:', !!caveSystem.nearEntrance);
+                            if (caveSystem.nearEntrance) {
+                                enterCave();
+                            } else {
+                                console.log('No nearby entrance found');
+                            }
+                        }
+                        break;
                     case 'KeyT':
                         environment.chunks.forEach(chunk => {
                             chunk.material.wireframe = !chunk.material.wireframe;
@@ -1822,7 +2916,9 @@
                         if (scene.fog) {
                             scene.fog = null;
                         } else {
-                            scene.fog = new THREE.FogExp2(0x002244, 0.006);
+                            const fogColor = caveSystem.inCave ? 0x221133 : 0x002244;
+                            const fogDensity = caveSystem.inCave ? 0.002 : 0.006;
+                            scene.fog = new THREE.FogExp2(fogColor, fogDensity);
                         }
                         break;
                     case 'KeyH':
@@ -1874,7 +2970,8 @@
 
             document.addEventListener('wheel', (e) => {
                 cameraDistance += e.deltaY * 0.05;
-                cameraDistance = Math.max(5, Math.min(100, cameraDistance));
+                const maxDistance = caveSystem.inCave ? 30 : 100;
+                cameraDistance = Math.max(5, Math.min(maxDistance, cameraDistance));
                 e.preventDefault();
             });
 
@@ -2035,118 +3132,14 @@
                     if (initialDistance > 0) {
                         const scale = distance / initialDistance;
                         cameraDistance /= scale;
-                        cameraDistance = Math.max(5, Math.min(100, cameraDistance));
+                        const maxDistance = caveSystem.inCave ? 30 : 100;
+                        cameraDistance = Math.max(5, Math.min(maxDistance, cameraDistance));
                         initialDistance = distance;
                     }
                     
                     e.preventDefault();
                 }
             }, { passive: false });
-        }
-
-        // Initialize
-        function init() {
-            console.log('Initializing submarine combat game...');
-            
-            // Scene
-            scene = new THREE.Scene();
-            scene.fog = new THREE.FogExp2(0x002244, 0.006);
-            
-            // Camera
-            camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
-            camera.position.set(0, 20, 30);
-            
-            // Renderer
-            renderer = new THREE.WebGLRenderer({ 
-                canvas: document.getElementById('canvas'),
-                antialias: true 
-            });
-            renderer.setSize(window.innerWidth, window.innerHeight);
-            renderer.setClearColor(0x001a33);
-            renderer.shadowMap.enabled = true;
-            renderer.shadowMap.type = THREE.PCFSoftShadowMap;
-            
-            // Lighting
-            const ambientLight = new THREE.AmbientLight(0x203050, 0.5);
-            scene.add(ambientLight);
-            
-            const sunLight = new THREE.DirectionalLight(0x4499dd, 0.7);
-            sunLight.position.set(50, 100, 50);
-            sunLight.castShadow = true;
-            sunLight.shadow.mapSize.width = 2048;
-            sunLight.shadow.mapSize.height = 2048;
-            scene.add(sunLight);
-            
-            const hemisphereLight = new THREE.HemisphereLight(0x2266aa, 0x002244, 0.6);
-            scene.add(hemisphereLight);
-            
-            // Create terrain
-            environment = createEnvironment();
-            environment.chunks.forEach(chunk => scene.add(chunk));
-            
-            // Create submarine
-            submarine = createSubmarine();
-            submarine.position.set(0, -5, 0);
-            submarine.rotation.y = Math.PI;
-            scene.add(submarine);
-            
-            // Submarine headlights
-            const headlight1 = new THREE.SpotLight(0xffffaa, 2, 100, Math.PI / 6, 0.3);
-            headlight1.position.set(-0.8, 0, 6);
-            headlight1.target.position.set(-0.8, -2, 20);
-            headlight1.castShadow = true;
-            submarine.add(headlight1);
-            submarine.add(headlight1.target);
-            spotlights.push(headlight1);
-            
-            const headlight2 = new THREE.SpotLight(0xffffaa, 2, 100, Math.PI / 6, 0.3);
-            headlight2.position.set(0.8, 0, 6);
-            headlight2.target.position.set(0.8, -2, 20);
-            headlight2.castShadow = true;
-            submarine.add(headlight2);
-            submarine.add(headlight2.target);
-            spotlights.push(headlight2);
-            
-            const subGlow = new THREE.PointLight(0xffff88, 0.5, 20);
-            subGlow.position.set(0, 0, 0);
-            submarine.add(subGlow);
-            
-            // Stats
-            stats = new Stats();
-            document.getElementById('stats').appendChild(stats.domElement);
-            
-            // Controls
-            setupControls();
-            
-            // Start
-            animate();
-        }
-
-        // Main animation loop
-        function animate(time = 0) {
-            requestAnimationFrame(animate);
-            
-            stats.begin();
-            
-            updateSubmarine();
-            updateTorpedoes();
-            updateExplosions();
-            spawnMarineLife();
-            cleanupDistantCreatures();
-            
-            // Update creature AI
-            sharks.forEach(shark => updateSharkAI(shark, time));
-            turtles.forEach(turtle => updateTurtleAI(turtle, time));
-            jellyfish.forEach(jelly => updateJellyfishAI(jelly, time));
-            
-            populateWorld();
-            animateOceanLife(time);
-            updateCamera();
-            updateUI();
-            
-            renderer.render(scene, camera);
-            
-            stats.end();
         }
 
         // Resize handler
