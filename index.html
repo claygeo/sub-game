@@ -591,7 +591,7 @@
         
         // World generation - Optimized
         const cellSize = 100;
-        const viewRadius = 3;
+        const viewRadius = 2; // Reduced from 3
         const generatedCells = new Map();
         const cellObjects = new Map();
         let objectCount = 0;
@@ -614,15 +614,15 @@
         let jellyfish = [];
         let shipwrecks = [];
         
-        // Torpedo system
+        // Torpedo system - OPTIMIZED
         let torpedoes = [];
-        const maxTorpedoes = 8;
+        const maxTorpedoes = 4; // Reduced from 8
         const torpedoSpeed = 2.0;
-        const torpedoLifetime = 4000;
-        const torpedoCooldown = 300;
+        const torpedoLifetime = 3000; // Reduced from 4000
+        const torpedoCooldown = 500; // Increased from 300
         let lastTorpedoTime = 0;
 
-        // UNDERGROUND CITY SYSTEM - Completely redesigned
+        // UNDERGROUND CITY SYSTEM - LAZY LOADING OPTIMIZED
         let undergroundCity = {
             sinkholes: new Map(),
             inCity: false,
@@ -634,18 +634,20 @@
             allCityMeshes: [],
             generatedChunks: new Map(),
             currentSeed: null,
-            citySize: 800,  // Much larger than cave system
+            citySize: 600,  // Reduced from 800
             districtTypes: ['ruins', 'industrial', 'residential', 'city_center', 'outskirts'],
             currentDistrict: 'surface',
             bossArena: null,
             bossActive: false,
             cityLights: [],
-            debrisFields: []
+            debrisFields: [],
+            loadedCity: null, // Only exists when in city
+            lastSinkholeCheck: 0 // Throttle sinkhole checks
         };
 
         // Initialize SimplexNoise instances
         const simplex = new SimplexNoise();
-        let citySimplex = null;
+        let citySimplex = null; // Only initialize when needed
 
         // Enhanced height function for ocean terrain
         function getHeight(x, z, time = 0) {
@@ -663,7 +665,7 @@
             return -30 + baseHeight + ridges + hills + details + valleys;
         }
 
-        // Underground city terrain generation
+        // Underground city terrain generation - LAZY LOADED
         function getCityHeight(x, z) {
             if (!citySimplex) {
                 console.warn('citySimplex not initialized, returning default height');
@@ -693,10 +695,10 @@
             const centerZ = 0;
             const distance = Math.sqrt((x - centerX) * (x - centerX) + (z - centerZ) * (z - centerZ));
             
-            if (distance < 80) return 'city_center';
-            if (distance < 160) return 'residential';
-            if (distance < 240) return 'industrial';
-            if (distance < 320) return 'ruins';
+            if (distance < 60) return 'city_center'; // Reduced from 80
+            if (distance < 120) return 'residential'; // Reduced from 160
+            if (distance < 180) return 'industrial'; // Reduced from 240
+            if (distance < 240) return 'ruins'; // Reduced from 320
             return 'outskirts';
         }
 
@@ -718,12 +720,12 @@
             building.receiveShadow = true;
             group.add(building);
             
-            // Add floors/windows
-            const floors = Math.floor(height / 4);
+            // Add floors/windows - SIMPLIFIED
+            const floors = Math.max(2, Math.floor(height / 8)); // Reduced detail
             for (let i = 1; i < floors; i++) {
                 const floorY = (i * height) / floors;
                 
-                // Windows
+                // Windows - SIMPLIFIED
                 const windowGeometry = new THREE.PlaneGeometry(width * 0.8, 2);
                 const windowMaterial = new THREE.MeshPhongMaterial({
                     color: Math.random() > 0.3 ? 0x88aaff : 0x333333,
@@ -732,31 +734,18 @@
                     shininess: 100
                 });
                 
-                // Front and back windows
+                // Only front window to reduce polygons
                 const frontWindow = new THREE.Mesh(windowGeometry, windowMaterial);
                 frontWindow.position.set(0, floorY, depth / 2 + 0.1);
                 group.add(frontWindow);
-                
-                const backWindow = new THREE.Mesh(windowGeometry, windowMaterial);
-                backWindow.position.set(0, floorY, -depth / 2 - 0.1);
-                backWindow.rotation.y = Math.PI;
-                group.add(backWindow);
             }
             
-            // Rooftop details
-            if (Math.random() > 0.5) {
+            // Rooftop details - SIMPLIFIED
+            if (Math.random() > 0.7) { // Reduced frequency
                 const rooftopGeometry = new THREE.BoxGeometry(width * 0.3, height * 0.1, depth * 0.3);
                 const rooftop = new THREE.Mesh(rooftopGeometry, buildingMaterial);
                 rooftop.position.y = height + (height * 0.05);
                 group.add(rooftop);
-            }
-            
-            // Emergency lighting
-            if (Math.random() > 0.6) {
-                const emergencyLight = new THREE.PointLight(0xff4444, 2, 50);
-                emergencyLight.position.set(0, height + 5, 0);
-                group.add(emergencyLight);
-                undergroundCity.cityLights.push(emergencyLight);
             }
             
             return group;
@@ -766,9 +755,9 @@
         function createHouse(district) {
             const group = new THREE.Group();
             
-            const width = 8 + Math.random() * 6;
-            const height = 6 + Math.random() * 4;
-            const depth = 8 + Math.random() * 6;
+            const width = 6 + Math.random() * 4; // Reduced size
+            const height = 5 + Math.random() * 3;
+            const depth = 6 + Math.random() * 4;
             
             // Main house structure
             const houseGeometry = new THREE.BoxGeometry(width, height, depth);
@@ -782,7 +771,7 @@
             house.receiveShadow = true;
             group.add(house);
             
-            // Roof
+            // Roof - SIMPLIFIED
             const roofGeometry = new THREE.ConeGeometry(width * 0.8, height * 0.4, 4);
             const roofMaterial = new THREE.MeshPhongMaterial({
                 color: 0x442222,
@@ -793,29 +782,6 @@
             roof.rotation.y = Math.PI / 4;
             group.add(roof);
             
-            // Door
-            const doorGeometry = new THREE.BoxGeometry(1.5, 3, 0.2);
-            const doorMaterial = new THREE.MeshPhongMaterial({ color: 0x664422 });
-            const door = new THREE.Mesh(doorGeometry, doorMaterial);
-            door.position.set(0, 1.5, depth / 2 + 0.1);
-            group.add(door);
-            
-            // Windows
-            const windowGeometry = new THREE.PlaneGeometry(2, 2);
-            const windowMaterial = new THREE.MeshPhongMaterial({
-                color: Math.random() > 0.4 ? 0x88aaff : 0x222222,
-                transparent: true,
-                opacity: 0.8
-            });
-            
-            const leftWindow = new THREE.Mesh(windowGeometry, windowMaterial);
-            leftWindow.position.set(-width / 3, height / 2, depth / 2 + 0.1);
-            group.add(leftWindow);
-            
-            const rightWindow = new THREE.Mesh(windowGeometry, windowMaterial);
-            rightWindow.position.set(width / 3, height / 2, depth / 2 + 0.1);
-            group.add(rightWindow);
-            
             return group;
         }
         
@@ -823,9 +789,9 @@
         function createFactory(district) {
             const group = new THREE.Group();
             
-            const width = 20 + Math.random() * 15;
-            const height = 15 + Math.random() * 10;
-            const depth = 30 + Math.random() * 20;
+            const width = 15 + Math.random() * 10; // Reduced size
+            const height = 12 + Math.random() * 8;
+            const depth = 20 + Math.random() * 15;
             
             // Main factory building
             const factoryGeometry = new THREE.BoxGeometry(width, height, depth);
@@ -839,10 +805,10 @@
             factory.receiveShadow = true;
             group.add(factory);
             
-            // Smokestacks
-            const stackCount = 1 + Math.floor(Math.random() * 3);
+            // Smokestacks - REDUCED
+            const stackCount = 1 + Math.floor(Math.random() * 2); // Reduced from 3
             for (let i = 0; i < stackCount; i++) {
-                const stackGeometry = new THREE.CylinderGeometry(1.5, 2, height * 1.5, 8);
+                const stackGeometry = new THREE.CylinderGeometry(1.5, 2, height * 1.5, 6); // Reduced segments
                 const stackMaterial = new THREE.MeshPhongMaterial({ color: 0x333333 });
                 const stack = new THREE.Mesh(stackGeometry, stackMaterial);
                 
@@ -855,22 +821,10 @@
                 group.add(stack);
             }
             
-            // Industrial lighting
-            const industrialLight = new THREE.PointLight(0xffaa44, 3, 60);
-            industrialLight.position.set(0, height + 8, 0);
-            group.add(industrialLight);
-            undergroundCity.cityLights.push(industrialLight);
-            
-            // Loading docks
-            const dockGeometry = new THREE.BoxGeometry(8, 3, 4);
-            const dock = new THREE.Mesh(dockGeometry, factoryMaterial);
-            dock.position.set(width / 2 + 4, 1.5, 0);
-            group.add(dock);
-            
             return group;
         }
         
-        // Create vehicle (car, truck, bus)
+        // Create vehicle (car, truck, bus) - SIMPLIFIED
         function createVehicle(type = 'car') {
             const group = new THREE.Group();
             
@@ -911,56 +865,33 @@
             body.receiveShadow = true;
             group.add(body);
             
-            // Wheels
-            const wheelGeometry = new THREE.CylinderGeometry(0.4, 0.4, 0.3, 8);
+            // Wheels - SIMPLIFIED
+            const wheelGeometry = new THREE.CylinderGeometry(0.4, 0.4, 0.3, 6); // Reduced segments
             const wheelMaterial = new THREE.MeshPhongMaterial({ color: 0x222222 });
             
-            const wheelPositions = [
-                [-width/2 - 0.2, 0.4, length/3],
-                [width/2 + 0.2, 0.4, length/3],
-                [-width/2 - 0.2, 0.4, -length/3],
-                [width/2 + 0.2, 0.4, -length/3]
-            ];
+            // Only front wheels to reduce polygons
+            const frontLeft = new THREE.Mesh(wheelGeometry, wheelMaterial);
+            frontLeft.position.set(-width/2 - 0.2, 0.4, length/3);
+            frontLeft.rotation.z = Math.PI / 2;
+            group.add(frontLeft);
             
-            wheelPositions.forEach(pos => {
-                const wheel = new THREE.Mesh(wheelGeometry, wheelMaterial);
-                wheel.position.set(pos[0], pos[1], pos[2]);
-                wheel.rotation.z = Math.PI / 2;
-                group.add(wheel);
-            });
-            
-            // Windows
-            if (type === 'bus') {
-                const windowGeometry = new THREE.PlaneGeometry(length * 0.8, height * 0.4);
-                const windowMaterial = new THREE.MeshPhongMaterial({
-                    color: 0x88ccff,
-                    transparent: true,
-                    opacity: 0.6
-                });
-                
-                const sideWindow = new THREE.Mesh(windowGeometry, windowMaterial);
-                sideWindow.position.set(width/2 + 0.1, height * 0.7, 0);
-                sideWindow.rotation.y = Math.PI / 2;
-                group.add(sideWindow);
-            }
-            
-            // Random damage/rust
-            if (Math.random() > 0.7) {
-                body.material.color.multiplyScalar(0.6); // Make it look damaged
-            }
+            const frontRight = new THREE.Mesh(wheelGeometry, wheelMaterial);
+            frontRight.position.set(width/2 + 0.2, 0.4, length/3);
+            frontRight.rotation.z = Math.PI / 2;
+            group.add(frontRight);
             
             return group;
         }
         
-        // Create debris field
+        // Create debris field - SIMPLIFIED
         function createDebrisField(centerX, centerZ) {
             const group = new THREE.Group();
-            const debrisCount = 8 + Math.floor(Math.random() * 12);
+            const debrisCount = 4 + Math.floor(Math.random() * 6); // Reduced from 8-20
             
             for (let i = 0; i < debrisCount; i++) {
                 const debrisGeometry = new THREE.DodecahedronGeometry(
-                    1 + Math.random() * 3,
-                    Math.floor(Math.random() * 2)
+                    1 + Math.random() * 2, // Reduced size
+                    0 // Reduced detail level
                 );
                 
                 const debrisMaterial = new THREE.MeshPhongMaterial({
@@ -974,9 +905,9 @@
                 
                 const debris = new THREE.Mesh(debrisGeometry, debrisMaterial);
                 debris.position.set(
-                    (Math.random() - 0.5) * 30,
-                    Math.random() * 5,
-                    (Math.random() - 0.5) * 30
+                    (Math.random() - 0.5) * 20, // Reduced spread
+                    Math.random() * 3,
+                    (Math.random() - 0.5) * 20
                 );
                 debris.rotation.set(
                     Math.random() * Math.PI,
@@ -992,32 +923,32 @@
             return group;
         }
         
-        // Create central spire (boss arena)
+        // Create central spire (boss arena) - SIMPLIFIED
         function createCentralSpire() {
             const group = new THREE.Group();
             
             // Main spire
-            const spireGeometry = new THREE.CylinderGeometry(8, 12, 120, 16);
+            const spireGeometry = new THREE.CylinderGeometry(8, 12, 100, 12); // Reduced height and segments
             const spireMaterial = new THREE.MeshPhongMaterial({
                 color: 0x444466,
                 shininess: 100
             });
             const spire = new THREE.Mesh(spireGeometry, spireMaterial);
-            spire.position.y = 60;
+            spire.position.y = 50;
             spire.castShadow = true;
             spire.receiveShadow = true;
             group.add(spire);
             
-            // Spire details and platforms
-            for (let i = 0; i < 5; i++) {
-                const platformGeometry = new THREE.CylinderGeometry(15, 15, 3, 12);
+            // Spire details and platforms - REDUCED
+            for (let i = 0; i < 3; i++) { // Reduced from 5
+                const platformGeometry = new THREE.CylinderGeometry(12, 12, 3, 8); // Reduced segments
                 const platform = new THREE.Mesh(platformGeometry, spireMaterial);
-                platform.position.y = 20 + (i * 20);
+                platform.position.y = 15 + (i * 25);
                 group.add(platform);
             }
             
             // Energy core at top
-            const coreGeometry = new THREE.SphereGeometry(6, 16, 16);
+            const coreGeometry = new THREE.SphereGeometry(5, 12, 12); // Reduced segments
             const coreMaterial = new THREE.MeshPhongMaterial({
                 color: 0x4488ff,
                 shininess: 200,
@@ -1025,35 +956,8 @@
                 opacity: 0.8
             });
             const core = new THREE.Mesh(coreGeometry, coreMaterial);
-            core.position.y = 125;
+            core.position.y = 105;
             group.add(core);
-            
-            // Powerful central light
-            const spireLight = new THREE.PointLight(0x4488ff, 5, 200);
-            spireLight.position.set(0, 125, 0);
-            group.add(spireLight);
-            undergroundCity.cityLights.push(spireLight);
-            
-            // Mysterious energy effects
-            const energyRings = 3;
-            for (let i = 0; i < energyRings; i++) {
-                const ringGeometry = new THREE.RingGeometry(10 + i * 5, 12 + i * 5, 16);
-                const ringMaterial = new THREE.MeshPhongMaterial({
-                    color: 0x4488ff,
-                    transparent: true,
-                    opacity: 0.4,
-                    side: THREE.DoubleSide
-                });
-                const ring = new THREE.Mesh(ringGeometry, ringMaterial);
-                ring.position.y = 125 + i * 8;
-                ring.rotation.x = Math.PI / 2;
-                group.add(ring);
-                
-                ring.userData = {
-                    rotationSpeed: 0.01 + i * 0.005,
-                    originalY: ring.position.y
-                };
-            }
             
             return group;
         }
@@ -1080,10 +984,11 @@
             }
         }
 
-        // Generate underground city layout
+        // LAZY LOADING CITY GENERATION - Only when entering city
         function generateUndergroundCity(sinkholePos, seed) {
-            console.log('Generating massive underground city...');
+            console.log('Generating underground city (lazy loading)...');
             
+            // Initialize city simplex only when needed
             citySimplex = new SimplexNoise(seed);
             undergroundCity.currentSeed = seed;
             
@@ -1095,19 +1000,19 @@
             undergroundCity.cityLights = [];
             undergroundCity.debrisFields = [];
             
-            // Create the city group FIRST before any district generation
+            // Create the city group
             const cityGroup = new THREE.Group();
             undergroundCity.loadedCity = cityGroup;
             scene.add(cityGroup);
             
-            console.log('City group created and assigned to undergroundCity.loadedCity');
+            console.log('City group created');
             
             // Create underground city floor/terrain
             createUndergroundCityTerrain();
             
-            // Generate district layout
-            const districtSize = 120;
-            const districtsPerSide = 7; // 7x7 grid of districts
+            // Generate district layout - SMALLER GRID
+            const districtSize = 100; // Reduced from 120
+            const districtsPerSide = 5; // Reduced from 7
             
             for (let dx = 0; dx < districtsPerSide; dx++) {
                 for (let dz = 0; dz < districtsPerSide; dz++) {
@@ -1131,7 +1036,7 @@
             
             console.log(`Generated city layout with ${undergroundCity.districts.length} districts`);
             
-            // Generate entrance area immediately - but safely
+            // Generate entrance area immediately - ONLY city center
             const cityCenter = undergroundCity.districts.find(d => d.type === 'city_center');
             if (cityCenter && undergroundCity.loadedCity) {
                 generateDistrictContent(cityCenter);
@@ -1142,11 +1047,6 @@
             cityAmbient.name = 'cityAmbient';
             cityGroup.add(cityAmbient);
             
-            // Add mysterious city fog/particles effect
-            const fogLight = new THREE.PointLight(0x4466aa, 1, 100);
-            fogLight.position.set(0, -60, 0);
-            cityGroup.add(fogLight);
-            
             console.log('City generation complete');
             
             return undergroundCity;
@@ -1156,8 +1056,8 @@
         function createUndergroundCityTerrain() {
             console.log('Creating underground city terrain...');
             
-            const terrainSize = 1000;
-            const segments = 50;
+            const terrainSize = 600; // Reduced from 1000
+            const segments = 30; // Reduced from 50
             const terrainGeometry = new THREE.PlaneGeometry(terrainSize, terrainSize, segments, segments);
             terrainGeometry.rotateX(-Math.PI / 2);
             
@@ -1196,15 +1096,9 @@
             console.log('Underground city terrain created');
         }
         
-        // Generate content for a specific district
+        // Generate content for a specific district - OPTIMIZED
         function generateDistrictContent(district) {
-            if (district.generated) return;
-            
-            // Safety check - ensure we have a valid city group to add to
-            if (!undergroundCity.loadedCity) {
-                console.warn('No loaded city group available, skipping district generation');
-                return;
-            }
+            if (district.generated || !undergroundCity.loadedCity) return;
             
             console.log(`Generating ${district.type} district at (${district.centerX}, ${district.centerZ})`);
             
@@ -1212,84 +1106,49 @@
                 const buildingDensity = getBuildingDensity(district.type);
                 const buildingsToGenerate = Math.floor(buildingDensity * adaptiveQuality);
                 
-                // Create a grid-based placement system for better spacing
+                // Create a simpler grid-based placement system
                 const gridSize = Math.ceil(Math.sqrt(buildingsToGenerate));
                 const cellSize = district.size / gridSize;
-                const usedPositions = new Set();
                 
                 for (let i = 0; i < buildingsToGenerate; i++) {
                     const building = generateBuildingForDistrict(district);
                     if (building && undergroundCity.loadedCity) {
                         
-                        // Grid-based placement with randomization
-                        let placed = false;
-                        let attempts = 0;
+                        const gridX = i % gridSize;
+                        const gridZ = Math.floor(i / gridSize);
                         
-                        while (!placed && attempts < 20) {
-                            const gridX = Math.floor(Math.random() * gridSize);
-                            const gridZ = Math.floor(Math.random() * gridSize);
-                            const posKey = `${gridX}-${gridZ}`;
-                            
-                            if (!usedPositions.has(posKey)) {
-                                usedPositions.add(posKey);
-                                
-                                const baseX = district.centerX - district.size/2 + (gridX * cellSize) + (cellSize/2);
-                                const baseZ = district.centerZ - district.size/2 + (gridZ * cellSize) + (cellSize/2);
-                                
-                                // Add some randomness within the cell
-                                const offsetX = (Math.random() - 0.5) * cellSize * 0.6;
-                                const offsetZ = (Math.random() - 0.5) * cellSize * 0.6;
-                                
-                                building.position.set(
-                                    baseX + offsetX,
-                                    getCityHeight(baseX + offsetX, baseZ + offsetZ), // Use actual position for height
-                                    baseZ + offsetZ
-                                );
-                                
-                                building.rotation.y = Math.random() * Math.PI * 2;
-                                
-                                undergroundCity.loadedCity.add(building);
-                                undergroundCity.buildings.push(building);
-                                undergroundCity.allCityMeshes.push(building);
-                                district.buildingCount++;
-                                objectCount++;
-                                placed = true;
-                            }
-                            attempts++;
-                        }
+                        const baseX = district.centerX - district.size/2 + (gridX * cellSize) + (cellSize/2);
+                        const baseZ = district.centerZ - district.size/2 + (gridZ * cellSize) + (cellSize/2);
                         
-                        // Fallback to random placement if grid fails
-                        if (!placed) {
-                            const finalX = district.centerX + (Math.random() - 0.5) * district.size * 0.8;
-                            const finalZ = district.centerZ + (Math.random() - 0.5) * district.size * 0.8;
-                            
-                            building.position.set(
-                                finalX,
-                                getCityHeight(finalX, finalZ),
-                                finalZ
-                            );
-                            
-                            building.rotation.y = Math.random() * Math.PI * 2;
-                            
-                            undergroundCity.loadedCity.add(building);
-                            undergroundCity.buildings.push(building);
-                            undergroundCity.allCityMeshes.push(building);
-                            district.buildingCount++;
-                            objectCount++;
-                        }
+                        // Add some randomness within the cell
+                        const offsetX = (Math.random() - 0.5) * cellSize * 0.5;
+                        const offsetZ = (Math.random() - 0.5) * cellSize * 0.5;
+                        
+                        building.position.set(
+                            baseX + offsetX,
+                            getCityHeight(baseX + offsetX, baseZ + offsetZ),
+                            baseZ + offsetZ
+                        );
+                        
+                        building.rotation.y = Math.random() * Math.PI * 2;
+                        
+                        undergroundCity.loadedCity.add(building);
+                        undergroundCity.buildings.push(building);
+                        undergroundCity.allCityMeshes.push(building);
+                        district.buildingCount++;
+                        objectCount++;
                     }
                 }
                 
-                // Add vehicles for some districts with better spacing
-                if (['residential', 'industrial', 'city_center'].includes(district.type) && undergroundCity.loadedCity) {
-                    const vehicleCount = Math.floor((5 + Math.random() * 10) * adaptiveQuality);
+                // Add vehicles - REDUCED
+                if (['residential', 'city_center'].includes(district.type) && undergroundCity.loadedCity) {
+                    const vehicleCount = Math.floor((2 + Math.random() * 4) * adaptiveQuality); // Reduced
                     for (let i = 0; i < vehicleCount; i++) {
                         const vehicleType = getRandomVehicleType(district.type);
                         const vehicle = createVehicle(vehicleType);
                         
-                        // Place vehicles along "streets" between buildings
-                        const streetX = district.centerX + (Math.random() - 0.5) * district.size * 0.9;
-                        const streetZ = district.centerZ + (Math.random() - 0.5) * district.size * 0.9;
+                        const streetX = district.centerX + (Math.random() - 0.5) * district.size * 0.8;
+                        const streetZ = district.centerZ + (Math.random() - 0.5) * district.size * 0.8;
                         
                         vehicle.position.set(
                             streetX,
@@ -1299,10 +1158,6 @@
                         
                         vehicle.rotation.y = Math.random() * Math.PI * 2;
                         
-                        // Random tilting for realism
-                        vehicle.rotation.x = (Math.random() - 0.5) * 0.3;
-                        vehicle.rotation.z = (Math.random() - 0.5) * 0.3;
-                        
                         undergroundCity.loadedCity.add(vehicle);
                         undergroundCity.vehicles.push(vehicle);
                         undergroundCity.allCityMeshes.push(vehicle);
@@ -1310,8 +1165,8 @@
                     }
                 }
                 
-                // Add debris fields
-                if (['ruins', 'outskirts'].includes(district.type) && undergroundCity.loadedCity) {
+                // Add debris fields - LESS FREQUENTLY
+                if (['ruins'].includes(district.type) && undergroundCity.loadedCity && Math.random() < 0.5) {
                     const debrisField = createDebrisField(district.centerX, district.centerZ);
                     const debrisX = district.centerX + (Math.random() - 0.5) * district.size * 0.5;
                     const debrisZ = district.centerZ + (Math.random() - 0.5) * district.size * 0.5;
@@ -1343,21 +1198,20 @@
                 console.log(`Generated ${district.type} district with ${district.buildingCount} buildings`);
                 
             } catch (error) {
-                console.error(`Error generating district ${district.type} at (${district.centerX}, ${district.centerZ}):`, error);
-                // Mark as generated even if failed to prevent infinite retry
+                console.error(`Error generating district ${district.type}:`, error);
                 district.generated = true;
             }
         }
         
-        // Get building density for district type
+        // Get building density for district type - REDUCED
         function getBuildingDensity(districtType) {
             switch (districtType) {
-                case 'city_center': return 8;  // Reduced from 15
-                case 'residential': return 6;  // Reduced from 12
-                case 'industrial': return 5;   // Reduced from 8
-                case 'ruins': return 4;        // Reduced from 6
-                case 'outskirts': return 3;    // Reduced from 4
-                default: return 3;
+                case 'city_center': return 4;  // Reduced from 8
+                case 'residential': return 3;  // Reduced from 6
+                case 'industrial': return 3;   // Reduced from 5
+                case 'ruins': return 2;        // Reduced from 4
+                case 'outskirts': return 2;    // Reduced from 3
+                default: return 2;
             }
         }
         
@@ -1366,20 +1220,20 @@
             try {
                 switch (district.type) {
                     case 'city_center':
-                        if (Math.random() > 0.3) {
-                            return createSkyscraper(12 + Math.random() * 8, 40 + Math.random() * 60, 12 + Math.random() * 8, district.type);
+                        if (Math.random() > 0.5) { // Reduced probability
+                            return createSkyscraper(8 + Math.random() * 4, 30 + Math.random() * 40, 8 + Math.random() * 4, district.type);
                         } else {
                             return createFactory(district.type);
                         }
                     case 'residential':
-                        return Math.random() > 0.7 ? 
-                            createSkyscraper(8 + Math.random() * 4, 20 + Math.random() * 20, 8 + Math.random() * 4, district.type) :
+                        return Math.random() > 0.8 ? 
+                            createSkyscraper(6 + Math.random() * 2, 15 + Math.random() * 15, 6 + Math.random() * 2, district.type) :
                             createHouse(district.type);
                     case 'industrial':
                         return createFactory(district.type);
                     case 'ruins':
-                        if (Math.random() > 0.6) {
-                            const building = createSkyscraper(8 + Math.random() * 6, 15 + Math.random() * 25, 8 + Math.random() * 6, district.type);
+                        if (Math.random() > 0.7) {
+                            const building = createSkyscraper(6 + Math.random() * 4, 10 + Math.random() * 15, 6 + Math.random() * 4, district.type);
                             // Make it look damaged
                             if (building && building.children) {
                                 building.children.forEach(child => {
@@ -1407,27 +1261,31 @@
         function getRandomVehicleType(districtType) {
             switch (districtType) {
                 case 'city_center':
-                    const cityTypes = ['car', 'bus', 'truck'];
+                    const cityTypes = ['car', 'bus'];
                     return cityTypes[Math.floor(Math.random() * cityTypes.length)];
                 case 'industrial':
                     return Math.random() > 0.5 ? 'truck' : 'car';
                 case 'residential':
-                    return Math.random() > 0.8 ? 'bus' : 'car';
+                    return 'car';
                 default:
                     return 'car';
             }
         }
 
-        // Progressive city generation based on player position
+        // OPTIMIZED Progressive city generation
         function updateCityGeneration() {
             if (!undergroundCity.inCity || !undergroundCity.loadedCity) return;
             
             const playerPos = submarine.position;
-            const generationDistance = 150;
+            const generationDistance = 120; // Reduced from 150
+            
+            // Limit district generation per frame
+            let generatedThisFrame = 0;
+            const maxGenerationsPerFrame = 1;
             
             // Generate district content for nearby ungenerated districts
             for (const district of undergroundCity.districts) {
-                if (!district.generated) {
+                if (!district.generated && generatedThisFrame < maxGenerationsPerFrame) {
                     const distanceToDistrict = Math.sqrt(
                         (playerPos.x - district.centerX) * (playerPos.x - district.centerX) +
                         (playerPos.z - district.centerZ) * (playerPos.z - district.centerZ)
@@ -1435,6 +1293,7 @@
                     
                     if (distanceToDistrict < generationDistance) {
                         generateDistrictContent(district);
+                        generatedThisFrame++;
                     }
                 }
             }
@@ -1446,10 +1305,10 @@
                 console.log(`Entered ${currentDistrict} district`);
             }
             
-            // Check boss proximity
+            // Check boss proximity - THROTTLED
             if (undergroundCity.bossArena && !undergroundCity.bossActive) {
                 const bossDistance = playerPos.distanceTo(undergroundCity.bossArena.position);
-                if (bossDistance < 50) {  // Reduced from 80 for more reasonable trigger distance
+                if (bossDistance < 40) {  // Reduced from 50
                     showBossIndicator(true);
                 } else {
                     showBossIndicator(false);
@@ -1475,9 +1334,13 @@
             
             const safetyMargin = 4;
             
-            // Check collision with buildings
+            // Check collision with buildings - OPTIMIZED
             for (const building of undergroundCity.allCityMeshes) {
                 if (building.children && building.children.length > 0) {
+                    // Only check distance first for early rejection
+                    const buildingDistance = position.distanceTo(building.position);
+                    if (buildingDistance > 20) continue; // Skip distant buildings
+                    
                     // Check main building structure (usually first child)
                     const mainStructure = building.children[0];
                     if (mainStructure && mainStructure.geometry) {
@@ -1493,7 +1356,7 @@
             
             // Check terrain collision (underground city floor)
             const terrainHeight = getCityHeight(position.x, position.z);
-            if (position.y <= terrainHeight + 2) { // Reduced from 3 to 2 for better ground contact
+            if (position.y <= terrainHeight + 2) {
                 return true;
             }
             
@@ -1579,7 +1442,7 @@
             animate();
         }
 
-        // Main animation loop
+        // Main animation loop - OPTIMIZED
         function animate(time = 0) {
             requestAnimationFrame(animate);
             
@@ -1592,14 +1455,20 @@
             updateTorpedoes();
             updateExplosions();
             
-            // City system updates
+            // City system updates - OPTIMIZED
             if (!undergroundCity.inCity) {
-                checkSinkholeProximity();
+                // THROTTLED sinkhole proximity checks
+                const currentTime = Date.now();
+                if (currentTime - undergroundCity.lastSinkholeCheck > 500) { // Check every 500ms instead of every frame
+                    checkSinkholeProximity();
+                    undergroundCity.lastSinkholeCheck = currentTime;
+                }
+                
                 spawnMarineLife();
                 cleanupDistantCreatures();
                 
-                // Update creature AI
-                if (frameCount % Math.ceil(2 / adaptiveQuality) === 0) {
+                // Update creature AI - THROTTLED
+                if (frameCount % Math.ceil(4 / adaptiveQuality) === 0) { // Reduced frequency
                     sharks.forEach(shark => updateSharkAI(shark, time));
                     turtles.forEach(turtle => updateTurtleAI(turtle, time));
                     jellyfish.forEach(jelly => updateJellyfishAI(jelly, time));
@@ -1607,11 +1476,17 @@
             } else if (undergroundCity.inCity && undergroundCity.loadedCity) {
                 // Only run city updates if we're actually in the city AND have a valid city loaded
                 checkExitProximity();
-                updateCityGeneration();
+                
+                // THROTTLED city generation
+                if (frameCount % Math.ceil(10 / adaptiveQuality) === 0) { // Much less frequent
+                    updateCityGeneration();
+                }
+                
                 animateCityElements(time);
             }
             
-            if (frameCount % Math.ceil(3 / adaptiveQuality) === 0) {
+            // THROTTLED world population
+            if (frameCount % Math.ceil(6 / adaptiveQuality) === 0) { // Reduced frequency
                 populateWorld();
             }
             
@@ -1624,13 +1499,16 @@
             stats.end();
         }
 
-        // Animate city elements (lights, spire effects)
+        // Animate city elements (lights, spire effects) - SIMPLIFIED
         function animateCityElements(time) {
             if (!undergroundCity.inCity) return;
             
             const t = time * 0.001;
             
-            // Animate spire energy rings
+            // Skip animation frames for performance
+            if (frameCount % 4 !== 0) return;
+            
+            // Animate spire energy rings - SIMPLIFIED
             if (undergroundCity.bossArena) {
                 undergroundCity.bossArena.children.forEach(child => {
                     if (child.userData && child.userData.rotationSpeed) {
@@ -1640,18 +1518,20 @@
                 });
             }
             
-            // Flicker city lights
-            undergroundCity.cityLights.forEach((light, index) => {
-                if (Math.random() < 0.02) {
-                    light.intensity = light.intensity > 0 ? 0 : (light.color.r > 0.5 ? 3 : 2);
-                }
-            });
+            // Flicker city lights - LESS FREQUENT
+            if (frameCount % 30 === 0) { // Only every 30 frames
+                undergroundCity.cityLights.forEach((light, index) => {
+                    if (Math.random() < 0.01) { // Reduced frequency
+                        light.intensity = light.intensity > 0 ? 0 : (light.color.r > 0.5 ? 3 : 2);
+                    }
+                });
+            }
         }
 
-        // Sinkhole entrance detection (replaces cave entrance detection)
-        function findSinkholes(x, z, radius = 100) {
+        // OPTIMIZED Sinkhole entrance detection
+        function findSinkholes(x, z, radius = 80) { // Reduced radius from 100
             const sinkholes = [];
-            const step = 60;
+            const step = 80; // Increased step to reduce density
             
             for (let dx = -radius; dx <= radius; dx += step) {
                 for (let dz = -radius; dz <= radius; dz += step) {
@@ -1660,10 +1540,10 @@
                     const height = getHeight(testX, testZ);
                     
                     const sinkholeNoise = simplex.noise2D(testX * 0.0008, testZ * 0.0008);
-                    const shouldHaveSinkhole = height < -35 || (height < -25 && sinkholeNoise > 0.4);
+                    const shouldHaveSinkhole = height < -35 || (height < -25 && sinkholeNoise > 0.5); // Higher threshold
                     
                     if (shouldHaveSinkhole) {
-                        const key = `${Math.floor(testX / 200)}-${Math.floor(testZ / 200)}`;
+                        const key = `${Math.floor(testX / 300)}-${Math.floor(testZ / 300)}`; // Larger grid
                         if (!undergroundCity.sinkholes.has(key)) {
                             sinkholes.push({ x: testX, z: testZ, y: height, key: key });
                         }
@@ -1674,12 +1554,12 @@
             return sinkholes;
         }
 
-        // Create sinkhole entrance visual
+        // Create sinkhole entrance visual - SIMPLIFIED
         function createSinkholeEntrance(x, z, y) {
             const group = new THREE.Group();
             
             // Main sinkhole opening
-            const holeGeometry = new THREE.CylinderGeometry(15, 20, 12, 20);
+            const holeGeometry = new THREE.CylinderGeometry(15, 20, 12, 16); // Reduced segments
             const holeMaterial = new THREE.MeshPhongMaterial({ 
                 color: 0x000000,
                 transparent: true,
@@ -1689,12 +1569,12 @@
             hole.position.y = y + 6;
             group.add(hole);
             
-            // Cracked earth around sinkhole
-            for (let i = 0; i < 12; i++) {
-                const angle = (i / 12) * Math.PI * 2;
+            // Reduced cracked earth around sinkhole
+            for (let i = 0; i < 8; i++) { // Reduced from 12
+                const angle = (i / 8) * Math.PI * 2;
                 const distance = 18 + Math.random() * 12;
                 
-                const rockGeometry = new THREE.DodecahedronGeometry(2 + Math.random() * 4, 1);
+                const rockGeometry = new THREE.DodecahedronGeometry(2 + Math.random() * 4, 0); // Reduced detail
                 const rockMaterial = new THREE.MeshPhongMaterial({ 
                     color: new THREE.Color(0.12, 0.08, 0.05),
                     shininess: 10
@@ -1721,18 +1601,6 @@
             innerGlow.position.set(0, y - 12, 0);
             group.add(innerGlow);
             
-            // Warning signs/debris
-            const signGeometry = new THREE.BoxGeometry(3, 4, 0.2);
-            const signMaterial = new THREE.MeshPhongMaterial({ 
-                color: 0x664422,
-                shininess: 10
-            });
-            const sign = new THREE.Mesh(signGeometry, signMaterial);
-            sign.position.set(12, y + 2, -8);
-            sign.rotation.y = 0.3;
-            sign.rotation.z = 0.2;
-            group.add(sign);
-            
             group.userData = {
                 type: 'sinkhole_entrance',
                 entranceRadius: 20
@@ -1741,7 +1609,7 @@
             return group;
         }
 
-        // Check sinkhole proximity
+        // THROTTLED Check sinkhole proximity
         function checkSinkholeProximity() {
             if (undergroundCity.inCity) return;
             
@@ -1768,7 +1636,7 @@
             }
         }
 
-        // Enter underground city
+        // OPTIMIZED Enter underground city
         function enterUndergroundCity() {
             if (!undergroundCity.nearSinkhole || undergroundCity.inCity) return;
             
@@ -1789,7 +1657,7 @@
                 torpedoes.forEach(torpedo => scene.remove(torpedo));
                 torpedoes.length = 0;
                 
-                // Hide ALL ocean objects (kelp, fish, rocks, shipwrecks, sinkholes)
+                // Hide ALL ocean objects efficiently
                 console.log('Hiding ocean objects...');
                 for (const [cellKey, objects] of cellObjects) {
                     [...objects.kelp, ...objects.fish, ...objects.rocks, ...objects.shipwrecks, ...objects.sinkholes].forEach(obj => {
@@ -1803,7 +1671,7 @@
                 document.getElementById('district').textContent = 'Descent Tunnel';
                 document.getElementById('city-indicator').style.display = 'none';
                 
-                // Create the massive city environment
+                // LAZY LOAD: Create the city environment only now
                 const cityLayout = generateUndergroundCity(undergroundCity.nearSinkhole, undergroundCity.nearSinkhole.x * 1000 + undergroundCity.nearSinkhole.z);
                 
                 // Verify city generation succeeded
@@ -1813,21 +1681,20 @@
                     return;
                 }
                 
-                console.log('City generation successful, calculating safe spawn point away from central spire');
+                console.log('City generation successful, calculating safe spawn point');
                 
-                // Spawn in a safe area AWAY from the central spire - use residential district area
-                const spawnX = -60; // Residential district area
-                const spawnZ = -60;
-                const spawnY = getCityHeight(spawnX, spawnZ) + 10; // 10 units above terrain
+                // Spawn in a safe area
+                const spawnX = -40; // Smaller offset
+                const spawnZ = -40;
+                const spawnY = getCityHeight(spawnX, spawnZ) + 10;
                 
                 console.log(`Spawning submarine at safe location (${spawnX}, ${spawnY}, ${spawnZ})`);
-                console.log(`Central spire located at (0, 0) - spawn location chosen to avoid collision`);
                 
                 submarine.position.set(spawnX, spawnY, spawnZ);
                 submarine.rotation.y = 0;
                 
-                // Create exit portal in a different location, away from buildings
-                createExitPortal(-80, spawnY + 5, -80);
+                // Create exit portal
+                createExitPortal(-60, spawnY + 5, -60);
                 
                 // Hide ocean terrain
                 environment.chunks.forEach(chunk => {
@@ -1857,7 +1724,7 @@
             const group = new THREE.Group();
             
             // Portal platform
-            const platformGeometry = new THREE.CylinderGeometry(12, 14, 2, 16);
+            const platformGeometry = new THREE.CylinderGeometry(12, 14, 2, 12); // Reduced segments
             const platformMaterial = new THREE.MeshPhongMaterial({ 
                 color: 0x666677,
                 shininess: 50
@@ -1867,7 +1734,7 @@
             group.add(platform);
             
             // Portal ring
-            const portalGeometry = new THREE.RingGeometry(8, 12, 24);
+            const portalGeometry = new THREE.RingGeometry(8, 12, 16); // Reduced segments
             const portalMaterial = new THREE.MeshPhongMaterial({ 
                 color: 0xffaa44,
                 transparent: true,
@@ -1886,16 +1753,6 @@
             portalLight.position.set(x, y + 8, z);
             group.add(portalLight);
             
-            // Emergency exit sign
-            const signGeometry = new THREE.PlaneGeometry(6, 2);
-            const signMaterial = new THREE.MeshPhongMaterial({ 
-                color: 0xff3333,
-                shininess: 100
-            });
-            const sign = new THREE.Mesh(signGeometry, signMaterial);
-            sign.position.set(x, y + 12, z);
-            group.add(sign);
-            
             scene.add(group);
             undergroundCity.exitPortal = group;
             undergroundCity.exitPortal.position.set(x, y, z);
@@ -1906,7 +1763,7 @@
             };
         }
 
-        // Exit underground city
+        // OPTIMIZED Exit underground city
         function exitUndergroundCity() {
             if (!undergroundCity.inCity) return;
             
@@ -1937,7 +1794,7 @@
                 scene.remove(cityAmbient);
             }
             
-            // Clean up city system
+            // COMPLETE cleanup city system
             if (undergroundCity.loadedCity) {
                 scene.remove(undergroundCity.loadedCity);
                 undergroundCity.loadedCity.traverse((child) => {
@@ -1970,6 +1827,9 @@
             undergroundCity.bossArena = null;
             undergroundCity.currentDistrict = 'surface';
             
+            // Reset city simplex
+            citySimplex = null;
+            
             // Position submarine above sinkhole
             if (undergroundCity.nearSinkhole) {
                 submarine.position.set(
@@ -1990,7 +1850,7 @@
             const distance = submarine.position.distanceTo(undergroundCity.exitPortal.position);
             
             const indicator = document.getElementById('city-indicator');
-            if (distance < 30) { // Increased from 25 for easier detection
+            if (distance < 30) {
                 indicator.style.display = 'block';
                 indicator.textContent = `🚪 Surface Portal ${distance.toFixed(1)}m away - Press C to Ascend`;
             } else {
@@ -2254,8 +2114,8 @@
             const bell = new THREE.Mesh(bellGeometry, bellMaterial);
             group.add(bell);
             
-            // Tentacles
-            const tentacleCount = 8;
+            // Tentacles - SIMPLIFIED
+            const tentacleCount = 6; // Reduced from 8
             const tentacles = [];
             
             for (let i = 0; i < tentacleCount; i++) {
@@ -2263,14 +2123,14 @@
                 const angle = (i / tentacleCount) * Math.PI * 2;
                 const radius = 1.2;
                 
-                // Create segmented tentacle
-                const segments = 6;
+                // Create segmented tentacle - REDUCED SEGMENTS
+                const segments = 4; // Reduced from 6
                 for (let j = 0; j < segments; j++) {
                     const segmentGeometry = new THREE.CylinderGeometry(
                         0.15 - (j * 0.02), 
                         0.15 - ((j + 1) * 0.02), 
                         0.8, 
-                        6
+                        4 // Reduced segments
                     );
                     const segmentMaterial = new THREE.MeshPhongMaterial({ 
                         color: 0x6699cc,
@@ -2311,11 +2171,11 @@
             return group;
         }
 
-        // Create torpedo
+        // Create torpedo - SIMPLIFIED
         function createTorpedo() {
             const group = new THREE.Group();
             
-            const bodyGeometry = new THREE.CylinderGeometry(0.3, 0.25, 3, 8);
+            const bodyGeometry = new THREE.CylinderGeometry(0.3, 0.25, 3, 6); // Reduced segments
             const bodyMaterial = new THREE.MeshPhongMaterial({ 
                 color: 0x444444,
                 shininess: 100
@@ -2324,7 +2184,7 @@
             body.rotation.x = Math.PI / 2;
             group.add(body);
             
-            const noseGeometry = new THREE.ConeGeometry(0.3, 0.8, 8);
+            const noseGeometry = new THREE.ConeGeometry(0.3, 0.8, 6); // Reduced segments
             const nose = new THREE.Mesh(noseGeometry, bodyMaterial);
             nose.position.set(0, 0, 1.9);
             nose.rotation.x = -Math.PI / 2;
@@ -2341,7 +2201,7 @@
         function createExplosion(position) {
             const group = new THREE.Group();
             
-            const explosionGeometry = new THREE.SphereGeometry(1, 8, 8);
+            const explosionGeometry = new THREE.SphereGeometry(1, 6, 6); // Reduced segments
             const explosionMaterial = new THREE.MeshPhongMaterial({ 
                 color: 0xffaa00,
                 transparent: true,
@@ -2350,8 +2210,8 @@
             const explosion = new THREE.Mesh(explosionGeometry, explosionMaterial);
             group.add(explosion);
             
-            // Particles
-            for (let i = 0; i < 12; i++) {
+            // Particles - REDUCED
+            for (let i = 0; i < 8; i++) { // Reduced from 12
                 const particleGeometry = new THREE.SphereGeometry(0.2, 4, 4);
                 const particleMaterial = new THREE.MeshPhongMaterial({ 
                     color: 0xff6600,
@@ -2392,7 +2252,7 @@
             scene.add(group);
         }
 
-        // Fire torpedo
+        // Fire torpedo - OPTIMIZED
         function fireTorpedo(side = 'left') {
             if (isGameOver) return;
             
@@ -2419,7 +2279,7 @@
             torpedoes.push(torpedo);
         }
 
-        // Update torpedoes with collision detection
+        // OPTIMIZED Update torpedoes with collision detection
         function updateTorpedoes() {
             for (let i = torpedoes.length - 1; i >= 0; i--) {
                 const torpedo = torpedoes[i];
@@ -2438,7 +2298,7 @@
                         hit = true;
                     }
                 } else {
-                    // City collision - check buildings
+                    // City collision - OPTIMIZED check
                     if (checkCityCollision(torpedo.position)) {
                         hit = true;
                     }
@@ -2464,14 +2324,14 @@
                 if (hit || expired) {
                     createExplosion(torpedo.position);
                     
-                    // Scare marine life
+                    // Scare marine life - REDUCED RADIUS
                     [...turtles, ...jellyfish].forEach(creature => {
                         const distance = torpedo.position.distanceTo(creature.position);
-                        if (distance < 15) {
+                        if (distance < 10) { // Reduced from 15
                             const fleeDirection = new THREE.Vector3()
                                 .subVectors(creature.position, torpedo.position)
                                 .normalize()
-                                .multiplyScalar(3);
+                                .multiplyScalar(2); // Reduced from 3
                             creature.position.add(fleeDirection);
                         }
                     });
@@ -2687,7 +2547,7 @@
             document.getElementById('game-over').style.display = 'block';
         }
 
-        // Spawn marine life - Optimized with adaptive spawning
+        // OPTIMIZED Spawn marine life - Reduced spawning
         function spawnMarineLife() {
             if (undergroundCity.inCity) return; // No marine life in underground city
             
@@ -2696,8 +2556,8 @@
             // Adaptive spawning based on performance
             const spawnMultiplier = adaptiveQuality;
             
-            // Spawn sharks
-            if (sharks.length < Math.floor(3 * spawnMultiplier) && Math.random() < 0.006 * spawnMultiplier) {
+            // Spawn sharks - REDUCED
+            if (sharks.length < Math.floor(2 * spawnMultiplier) && Math.random() < 0.004 * spawnMultiplier) { // Reduced from 0.006
                 const shark = createShark();
                 const angle = Math.random() * Math.PI * 2;
                 const distance = 35 + Math.random() * 20;
@@ -2710,8 +2570,8 @@
                 sharks.push(shark);
             }
             
-            // Spawn turtles
-            if (turtles.length < Math.floor(2 * spawnMultiplier) && Math.random() < 0.003 * spawnMultiplier) {
+            // Spawn turtles - REDUCED
+            if (turtles.length < Math.floor(1 * spawnMultiplier) && Math.random() < 0.002 * spawnMultiplier) { // Reduced from 0.003
                 const turtle = createTurtle();
                 const angle = Math.random() * Math.PI * 2;
                 const distance = 20 + Math.random() * 25;
@@ -2726,8 +2586,8 @@
                 turtles.push(turtle);
             }
             
-            // Spawn jellyfish
-            if (jellyfish.length < Math.floor(4 * spawnMultiplier) && Math.random() < 0.004 * spawnMultiplier) {
+            // Spawn jellyfish - REDUCED
+            if (jellyfish.length < Math.floor(2 * spawnMultiplier) && Math.random() < 0.003 * spawnMultiplier) { // Reduced from 0.004
                 const jelly = createJellyfish();
                 const angle = Math.random() * Math.PI * 2;
                 const distance = 15 + Math.random() * 20;
@@ -2828,14 +2688,14 @@
             return chunk;
         }
 
-        // Create kelp forest
+        // Create kelp forest - SIMPLIFIED
         function createKelp(x, z) {
             const group = new THREE.Group();
-            const kelpCount = 3 + Math.floor(Math.random() * 4);
+            const kelpCount = 2 + Math.floor(Math.random() * 3); // Reduced from 3-7
             
             for (let i = 0; i < kelpCount; i++) {
                 const kelp = new THREE.Group();
-                const segments = 8 + Math.floor(Math.random() * 8);
+                const segments = 6 + Math.floor(Math.random() * 4); // Reduced from 8-16
                 const curve = new THREE.CatmullRomCurve3([]);
                 
                 let currentHeight = 0;
@@ -2846,7 +2706,7 @@
                     currentHeight += 2 + Math.random();
                 }
                 
-                const tubeGeometry = new THREE.TubeGeometry(curve, segments * 2, 0.2 + Math.random() * 0.3, 6, false);
+                const tubeGeometry = new THREE.TubeGeometry(curve, segments, 0.2 + Math.random() * 0.3, 4, false); // Reduced segments
                 const kelpMaterial = new THREE.MeshPhongMaterial({ 
                     color: new THREE.Color(0.1 + Math.random() * 0.1, 0.3 + Math.random() * 0.2, 0.1),
                     side: THREE.DoubleSide,
@@ -2856,9 +2716,9 @@
                 
                 kelp.add(kelpMesh);
                 kelp.position.set(
-                    (Math.random() - 0.5) * 10,
+                    (Math.random() - 0.5) * 8, // Reduced spread
                     0,
-                    (Math.random() - 0.5) * 10
+                    (Math.random() - 0.5) * 8
                 );
                 
                 kelp.userData = {
@@ -2873,10 +2733,10 @@
             return group;
         }
 
-        // Create fish school
+        // Create fish school - SIMPLIFIED
         function createFishSchool(x, z) {
             const group = new THREE.Group();
-            const fishCount = 8 + Math.floor(Math.random() * 12);
+            const fishCount = 6 + Math.floor(Math.random() * 8); // Reduced from 8-20
             const schoolColor = new THREE.Color(
                 0.3 + Math.random() * 0.7,
                 0.3 + Math.random() * 0.7,
@@ -2886,7 +2746,7 @@
             for (let i = 0; i < fishCount; i++) {
                 const fish = new THREE.Group();
                 
-                const bodyGeometry = new THREE.SphereGeometry(0.5, 8, 6);
+                const bodyGeometry = new THREE.SphereGeometry(0.5, 6, 4); // Reduced segments
                 bodyGeometry.scale(2.5, 0.8, 1);
                 const fishMaterial = new THREE.MeshPhongMaterial({ 
                     color: schoolColor,
@@ -2895,7 +2755,7 @@
                 const body = new THREE.Mesh(bodyGeometry, fishMaterial);
                 fish.add(body);
                 
-                const tailGeometry = new THREE.ConeGeometry(0.4, 1.2, 6);
+                const tailGeometry = new THREE.ConeGeometry(0.4, 1.2, 4); // Reduced segments
                 const tail = new THREE.Mesh(tailGeometry, fishMaterial);
                 tail.position.set(-1.5, 0, 0);
                 tail.rotation.z = -Math.PI / 2;
@@ -2929,15 +2789,15 @@
             return group;
         }
 
-        // Create rock formation
+        // Create rock formation - SIMPLIFIED
         function createRockFormation(x, z) {
             const group = new THREE.Group();
-            const rockCount = 2 + Math.floor(Math.random() * 4);
+            const rockCount = 2 + Math.floor(Math.random() * 3); // Reduced from 2-6
             
             for (let i = 0; i < rockCount; i++) {
                 const rockGeometry = new THREE.DodecahedronGeometry(
                     2 + Math.random() * 3,
-                    Math.floor(Math.random() * 2)
+                    0 // Reduced detail level
                 );
                 
                 const positions = rockGeometry.attributes.position.array;
@@ -2960,9 +2820,9 @@
                 
                 const rock = new THREE.Mesh(rockGeometry, rockMaterial);
                 rock.position.set(
-                    (Math.random() - 0.5) * 8,
+                    (Math.random() - 0.5) * 6, // Reduced spread
                     Math.random() * 2,
-                    (Math.random() - 0.5) * 8
+                    (Math.random() - 0.5) * 6
                 );
                 rock.rotation.set(
                     Math.random() * Math.PI,
@@ -2978,12 +2838,12 @@
             return group;
         }
 
-        // Create shipwreck
+        // Create shipwreck - SIMPLIFIED
         function createShipwreck() {
             const group = new THREE.Group();
             
             // Hull
-            const hullGeometry = new THREE.CylinderGeometry(4, 3, 40, 16);
+            const hullGeometry = new THREE.CylinderGeometry(4, 3, 40, 12); // Reduced segments
             hullGeometry.scale(1, 0.6, 1);
             const shipMaterial = new THREE.MeshPhongMaterial({ 
                 color: 0x3d2914,
@@ -3000,8 +2860,8 @@
             deck.position.set(0, 4.5, 0);
             group.add(deck);
             
-            // Broken masts
-            const mastGeometry = new THREE.CylinderGeometry(0.3, 0.4, 25, 8);
+            // Broken masts - REDUCED
+            const mastGeometry = new THREE.CylinderGeometry(0.3, 0.4, 25, 6); // Reduced segments
             const mastMaterial = new THREE.MeshPhongMaterial({ color: 0x2d1810 });
             
             const mast1 = new THREE.Mesh(mastGeometry, mastMaterial);
@@ -3009,20 +2869,14 @@
             mast1.rotation.z = 0.3;
             group.add(mast1);
             
-            const mast2 = new THREE.Mesh(mastGeometry, mastMaterial);
-            mast2.position.set(8, 12, 0);
-            mast2.rotation.z = -0.4;
-            mast2.scale.y = 0.6;
-            group.add(mast2);
-            
             // Cabin
             const cabinGeometry = new THREE.BoxGeometry(12, 6, 8);
             const cabin = new THREE.Mesh(cabinGeometry, shipMaterial);
             cabin.position.set(5, 8, 0);
             group.add(cabin);
             
-            // Holes in hull
-            const holeGeometry = new THREE.SphereGeometry(2, 8, 8);
+            // Only one hole to reduce complexity
+            const holeGeometry = new THREE.SphereGeometry(2, 6, 6); // Reduced segments
             const holeMaterial = new THREE.MeshPhongMaterial({ 
                 color: 0x000000,
                 transparent: true,
@@ -3033,15 +2887,10 @@
             hole1.scale.set(1, 0.5, 1);
             group.add(hole1);
             
-            const hole2 = new THREE.Mesh(holeGeometry, holeMaterial);
-            hole2.position.set(12, 1.5, -2);
-            hole2.scale.set(0.8, 0.6, 0.8);
-            group.add(hole2);
-            
             return group;
         }
 
-        // Generate cell content with performance optimization
+        // OPTIMIZED Generate cell content
         function generateCell(cellX, cellZ) {
             const cellKey = `${cellX}-${cellZ}`;
             if (generatedCells.has(cellKey)) return;
@@ -3053,14 +2902,14 @@
             const centerX = cellX * cellSize;
             const centerZ = cellZ * cellSize;
             
-            // Generate sinkhole entrances in this cell
+            // OPTIMIZED Generate sinkhole entrances in this cell - LESS FREQUENT
             const sinkholes = findSinkholes(centerX, centerZ, cellSize / 2);
             
-            // Force a sinkhole in every 3rd cell for better exploration
-            if (sinkholes.length === 0 && (cellX % 3 === 0 && cellZ % 3 === 0)) {
+            // REDUCED: Force a sinkhole only in every 4th cell for less density
+            if (sinkholes.length === 0 && (cellX % 4 === 0 && cellZ % 4 === 0)) {
                 const forcedSinkhole = {
-                    x: centerX + (Math.random() - 0.5) * cellSize * 0.6,
-                    z: centerZ + (Math.random() - 0.5) * cellSize * 0.6,
+                    x: centerX + (Math.random() - 0.5) * cellSize * 0.4, // Reduced spread
+                    z: centerZ + (Math.random() - 0.5) * cellSize * 0.4,
                     y: getHeight(centerX, centerZ) - 8,
                     key: `forced-${cellX}-${cellZ}`
                 };
@@ -3083,21 +2932,21 @@
             if (!undergroundCity.inCity) {
                 const terrainHeight = getHeight(centerX, centerZ);
                 
-                // Generate kelp forests
-                if (terrainHeight < -20 && Math.random() < 0.3 * adaptiveQuality) {
+                // Generate kelp forests - REDUCED PROBABILITY
+                if (terrainHeight < -20 && Math.random() < 0.2 * adaptiveQuality) { // Reduced from 0.3
                     const kelp = createKelp(centerX, centerZ);
                     kelp.position.set(
-                        centerX + (Math.random() - 0.5) * cellSize * 0.8,
+                        centerX + (Math.random() - 0.5) * cellSize * 0.6, // Reduced spread
                         terrainHeight,
-                        centerZ + (Math.random() - 0.5) * cellSize * 0.8
+                        centerZ + (Math.random() - 0.5) * cellSize * 0.6
                     );
                     scene.add(kelp);
                     objects.kelp.push(kelp);
                     objectCount++;
                 }
                 
-                // Generate fish schools
-                if (Math.random() < 0.2 * adaptiveQuality) {
+                // Generate fish schools - REDUCED PROBABILITY
+                if (Math.random() < 0.15 * adaptiveQuality) { // Reduced from 0.2
                     const fish = createFishSchool(centerX, centerZ);
                     const fishHeight = getHeight(centerX, centerZ) + 10 + Math.random() * 20;
                     fish.position.set(centerX, fishHeight, centerZ);
@@ -3106,26 +2955,26 @@
                     objectCount++;
                 }
                 
-                // Generate rock formations
-                if (Math.abs(terrainHeight + 10) < 20 && Math.random() < 0.25 * adaptiveQuality) {
+                // Generate rock formations - REDUCED PROBABILITY
+                if (Math.abs(terrainHeight + 10) < 20 && Math.random() < 0.2 * adaptiveQuality) { // Reduced from 0.25
                     const rocks = createRockFormation(centerX, centerZ);
                     rocks.position.set(
-                        centerX + (Math.random() - 0.5) * cellSize * 0.8,
+                        centerX + (Math.random() - 0.5) * cellSize * 0.6, // Reduced spread
                         terrainHeight,
-                        centerZ + (Math.random() - 0.5) * cellSize * 0.8
+                        centerZ + (Math.random() - 0.5) * cellSize * 0.6
                     );
                     scene.add(rocks);
                     objects.rocks.push(rocks);
                     objectCount++;
                 }
                 
-                // Generate shipwrecks
-                if (Math.random() < 0.03 * adaptiveQuality) {
+                // Generate shipwrecks - REDUCED PROBABILITY
+                if (Math.random() < 0.02 * adaptiveQuality) { // Reduced from 0.03
                     const shipwreck = createShipwreck();
                     shipwreck.position.set(
-                        centerX + (Math.random() - 0.5) * cellSize * 0.6,
+                        centerX + (Math.random() - 0.5) * cellSize * 0.5, // Reduced spread
                         terrainHeight,
-                        centerZ + (Math.random() - 0.5) * cellSize * 0.6
+                        centerZ + (Math.random() - 0.5) * cellSize * 0.5
                     );
                     shipwreck.rotation.y = Math.random() * Math.PI * 2;
                     scene.add(shipwreck);
@@ -3139,13 +2988,13 @@
         function createEnvironment() {
             const terrainChunks = [];
             const chunkSize = 100;
-            const chunksPerSide = 7;
+            const chunksPerSide = 5; // Reduced from 7
             
             for (let x = 0; x < chunksPerSide; x++) {
                 for (let z = 0; z < chunksPerSide; z++) {
                     const chunkX = x - Math.floor(chunksPerSide / 2);
                     const chunkZ = z - Math.floor(chunksPerSide / 2);
-                    const chunk = createTerrainChunk(chunkSize, 32, chunkX, chunkZ);
+                    const chunk = createTerrainChunk(chunkSize, 24, chunkX, chunkZ); // Reduced segments from 32
                     chunk.position.set(
                         chunkX * chunkSize, 
                         0, 
@@ -3252,16 +3101,16 @@
             };
         }
 
-        // Populate world with frame-friendly generation
+        // OPTIMIZED Populate world with frame-friendly generation
         function populateWorld() {
             const subPosition = submarine.position;
             const subCellX = Math.floor(subPosition.x / cellSize);
             const subCellZ = Math.floor(subPosition.z / cellSize);
             const activeCells = new Set();
             
-            // Adaptive generation based on performance
+            // Adaptive generation based on performance - REDUCED
             let generationCount = 0;
-            const maxGenerationsPerFrame = Math.floor(1 * adaptiveQuality) + 1;
+            const maxGenerationsPerFrame = Math.max(1, Math.floor(0.5 * adaptiveQuality)); // Reduced
             
             for (let dx = -viewRadius; dx <= viewRadius; dx++) {
                 for (let dz = -viewRadius; dz <= viewRadius; dz++) {
@@ -3277,9 +3126,9 @@
                 }
             }
             
-            // Adaptive cleanup
+            // Adaptive cleanup - REDUCED
             let cleanupCount = 0;
-            const maxCleanupPerFrame = Math.floor(2 * adaptiveQuality) + 1;
+            const maxCleanupPerFrame = Math.max(1, Math.floor(1 * adaptiveQuality)); // Reduced
             
             for (const [cellKey, objects] of cellObjects) {
                 if (!activeCells.has(cellKey) && cleanupCount < maxCleanupPerFrame) {
@@ -3294,7 +3143,7 @@
             }
         }
 
-        // Performance monitoring and adaptive quality
+        // OPTIMIZED Performance monitoring and adaptive quality
         function checkPerformance(currentTime) {
             frameCount++;
             
@@ -3303,45 +3152,47 @@
                 frameCount = 0;
                 lastPerformanceCheck = currentTime;
                 
-                // Adaptive quality adjustment
-                if (fps < 30) {
-                    adaptiveQuality = Math.max(0.3, adaptiveQuality - 0.1);
+                // More aggressive adaptive quality adjustment
+                if (fps < 25) { // Lowered threshold
+                    adaptiveQuality = Math.max(0.2, adaptiveQuality - 0.15); // More aggressive reduction
                     console.log(`Performance low (${fps.toFixed(1)} FPS), reducing quality to ${adaptiveQuality.toFixed(1)}`);
-                } else if (fps > 50) {
+                } else if (fps > 55) { // Higher threshold for increase
                     adaptiveQuality = Math.min(1.0, adaptiveQuality + 0.05);
                 }
                 
                 // Adjust terrain update frequency based on performance
-                if (fps < 40) {
-                    environment.updateInterval = 60;
+                if (fps < 35) {
+                    environment.updateInterval = 90; // Increased from 60
                 } else {
-                    environment.updateInterval = 30;
+                    environment.updateInterval = 45; // Increased from 30
                 }
             }
         }
 
-        // Animate ocean life - Optimized with frame skipping
+        // OPTIMIZED Animate ocean life - More frame skipping
         function animateOceanLife(time) {
             if (undergroundCity.inCity) return;
             
             const t = time * 0.001;
             
-            // Skip some animation frames for performance
-            if (frameCount % Math.ceil(2 / adaptiveQuality) !== 0) return;
+            // Skip more animation frames for performance
+            if (frameCount % Math.ceil(4 / adaptiveQuality) !== 0) return;
             
             for (const [cellKey, objects] of cellObjects) {
-                // Animate kelp swaying
+                // Animate kelp swaying - SIMPLIFIED
                 objects.kelp.forEach(kelpGroup => {
-                    kelpGroup.children.forEach(kelp => {
-                        if (kelp.userData) {
-                            const sway = Math.sin(t * kelp.userData.swaySpeed + kelp.userData.phase) * kelp.userData.swayAmplitude;
-                            kelp.rotation.x = sway * 0.5;
-                            kelp.rotation.z = sway * 0.3;
-                        }
-                    });
+                    if (frameCount % 8 === 0) { // Less frequent updates
+                        kelpGroup.children.forEach(kelp => {
+                            if (kelp.userData) {
+                                const sway = Math.sin(t * kelp.userData.swaySpeed + kelp.userData.phase) * kelp.userData.swayAmplitude;
+                                kelp.rotation.x = sway * 0.3; // Reduced intensity
+                                kelp.rotation.z = sway * 0.2;
+                            }
+                        });
+                    }
                 });
                 
-                // Animate fish schools
+                // Animate fish schools - SIMPLIFIED
                 objects.fish.forEach(school => {
                     if (school.userData) {
                         const schoolAngle = t * school.userData.schoolSpeed + school.userData.schoolPhase;
@@ -3349,13 +3200,16 @@
                         school.position.z = school.userData.centerZ + Math.sin(schoolAngle) * school.userData.schoolRadius;
                         school.rotation.y = -schoolAngle + Math.PI / 2;
                         
-                        school.children.forEach((fish, i) => {
-                            if (fish.userData) {
-                                const fishT = t * fish.userData.speed + fish.userData.phase;
-                                fish.position.y += Math.sin(fishT) * 0.02;
-                                fish.rotation.z = Math.sin(fishT * 2) * 0.1;
-                            }
-                        });
+                        // Less frequent individual fish animation
+                        if (frameCount % 12 === 0) {
+                            school.children.forEach((fish, i) => {
+                                if (fish.userData) {
+                                    const fishT = t * fish.userData.speed + fish.userData.phase;
+                                    fish.position.y += Math.sin(fishT) * 0.01; // Reduced intensity
+                                    fish.rotation.z = Math.sin(fishT * 2) * 0.05;
+                                }
+                            });
+                        }
                     }
                 });
             }
@@ -3405,12 +3259,12 @@
                 const terrainHeight = getHeight(submarine.position.x, submarine.position.z);
                 submarine.position.y = Math.max(submarine.position.y, terrainHeight + 3);
                 
-                // Update terrain - Adaptive frequency
+                // Update terrain - LESS FREQUENT
                 if (!environment.updateCounter) environment.updateCounter = 0;
                 environment.updateCounter++;
                 
                 // Adaptive terrain update frequency
-                const updateInterval = environment.updateInterval || 30;
+                const updateInterval = environment.updateInterval || 45;
                 if (environment.updateCounter >= updateInterval) {
                     const currentChunkX = Math.round(submarine.position.x / environment.chunkSize);
                     const currentChunkZ = Math.round(submarine.position.z / environment.chunkSize);
@@ -3432,15 +3286,15 @@
             // Underground city-specific camera constraints
             if (undergroundCity.inCity) {
                 // Wider camera distance for large city spaces
-                cameraDistance = Math.min(cameraDistance, 80);
-                cameraDistance = Math.max(cameraDistance, 12);
+                cameraDistance = Math.min(cameraDistance, 60); // Reduced from 80
+                cameraDistance = Math.max(cameraDistance, 10); // Reduced from 12
                 
                 // More restrictive vertical angle in city
-                cameraAngleV = Math.max(-Math.PI/3, Math.min(Math.PI/3, cameraAngleV));
+                cameraAngleV = Math.max(-Math.PI/4, Math.min(Math.PI/4, cameraAngleV)); // More restrictive
             } else {
                 // Ocean camera constraints
                 cameraDistance = Math.max(cameraDistance, 5);
-                cameraDistance = Math.min(cameraDistance, 100);
+                cameraDistance = Math.min(cameraDistance, 80); // Reduced from 100
                 
                 // Standard vertical angle limits
                 cameraAngleV = Math.max(-Math.PI/2 + 0.1, Math.min(Math.PI/2 - 0.1, cameraAngleV));
@@ -3584,7 +3438,7 @@
 
             document.addEventListener('wheel', (e) => {
                 cameraDistance += e.deltaY * 0.05;
-                const maxDistance = undergroundCity.inCity ? 80 : 100;
+                const maxDistance = undergroundCity.inCity ? 60 : 80; // Reduced
                 cameraDistance = Math.max(5, Math.min(maxDistance, cameraDistance));
                 e.preventDefault();
             });
@@ -3746,7 +3600,7 @@
                     if (initialDistance > 0) {
                         const scale = distance / initialDistance;
                         cameraDistance /= scale;
-                        const maxDistance = undergroundCity.inCity ? 80 : 100;
+                        const maxDistance = undergroundCity.inCity ? 60 : 80; // Reduced
                         cameraDistance = Math.max(5, Math.min(maxDistance, cameraDistance));
                         initialDistance = distance;
                     }
