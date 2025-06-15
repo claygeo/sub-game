@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Submarine Combat & Cave Exploration - Living Ocean</title>
+    <title>Submarine Combat & Underground City Exploration</title>
     <style>
         body { 
             margin: 0; 
@@ -38,7 +38,7 @@
             border-radius: 10px;
             font-size: 14px;
             z-index: 100;
-            max-width: 200px;
+            max-width: 220px;
         }
         #health-bar {
             position: absolute;
@@ -265,7 +265,7 @@
                 right: 10px;
                 font-size: 12px;
                 padding: 10px;
-                max-width: 150px;
+                max-width: 180px;
             }
             
             #touch-indicator {
@@ -273,17 +273,17 @@
             }
         }
 
-        /* Cave entrance indicator */
-        .cave-indicator {
+        /* City entrance indicator */
+        .city-indicator {
             position: absolute;
             top: 50%;
             left: 50%;
             transform: translate(-50%, -50%);
             background: rgba(0,0,0,0.8);
-            color: #88ccff;
+            color: #ffaa44;
             padding: 10px 20px;
             border-radius: 5px;
-            border: 2px solid #88ccff;
+            border: 2px solid #ffaa44;
             font-size: 16px;
             z-index: 150;
             display: none;
@@ -293,6 +293,29 @@
         @keyframes pulse {
             0%, 100% { opacity: 0.7; transform: translate(-50%, -50%) scale(1); }
             50% { opacity: 1; transform: translate(-50%, -50%) scale(1.05); }
+        }
+
+        /* Boss indicator */
+        .boss-indicator {
+            position: absolute;
+            top: 60%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background: rgba(100,0,0,0.9);
+            color: #ff6666;
+            padding: 15px 25px;
+            border-radius: 10px;
+            border: 3px solid #ff3333;
+            font-size: 18px;
+            font-weight: bold;
+            z-index: 150;
+            display: none;
+            animation: throb 1.5s infinite;
+        }
+
+        @keyframes throb {
+            0%, 100% { transform: translate(-50%, -50%) scale(1); }
+            50% { transform: translate(-50%, -50%) scale(1.1); }
         }
     </style>
 </head>
@@ -307,25 +330,32 @@
     
     <div class="damage-flash" id="damage-flash"></div>
     
-    <div class="cave-indicator" id="cave-indicator">
-        🕳️ Cave Entrance Nearby - Press C to Enter
+    <div class="city-indicator" id="city-indicator">
+        🏙️ Sinkhole to Lost City - Press C to Descend
+    </div>
+    
+    <div class="boss-indicator" id="boss-indicator">
+        ⚠️ ANCIENT GUARDIAN AWAKENING ⚠️
     </div>
     
     <div id="info">
         <div>Depth: <span id="depth">0</span>m</div>
         <div>Position: <span id="position">0, 0</span></div>
         <div>Environment: <span id="environment">Ocean</span></div>
+        <div>District: <span id="district">Ocean Surface</span></div>
         <div>Sharks: <span id="sharks">0</span></div>
         <div>Turtles: <span id="turtles">0</span></div>
         <div>Jellyfish: <span id="jellyfish">0</span></div>
         <div>Torpedoes: <span id="torpedoes">0</span></div>
         <div>Objects: <span id="objects">0</span></div>
-        <div>Caves Found: <span id="caves-found">0</span></div>
+        <div>Sinkholes Found: <span id="sinkholes-found">0</span></div>
+        <div>Buildings: <span id="buildings">0</span></div>
+        <div>City Districts: <span id="city-districts">0</span></div>
     </div>
 
     <div id="game-over">
         <h1>SUBMARINE DESTROYED</h1>
-        <p>The depths have claimed another vessel...</p>
+        <p>Lost in the depths of the sunken city...</p>
         <p>Final Depth: <span id="final-depth">0</span>m</p>
         <button onclick="location.reload()">Surface and Try Again</button>
     </div>
@@ -335,7 +365,7 @@
         <div>Space/Shift: Rise/Sink</div>
         <div>Mouse: Camera control</div>
         <div>Q/E: Fire torpedoes</div>
-        <div>C: Enter/Exit caves</div>
+        <div>C: Enter/Exit underground city</div>
         <div>H: Toggle headlights</div>
         <div>T: Toggle wireframe</div>
         <div>F: Toggle fog</div>
@@ -361,51 +391,58 @@
         <button class="mobile-btn" id="toggle-lights">💡</button>
     </div>
     
-    <div id="touch-indicator">Touch and drag to look around</div>
 
     <!-- CDN Dependencies -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/stats.js/r16/Stats.min.js"></script>
     
     <script>
-        // Use fallback SimplexNoise if CDN fails
+        // ENHANCED SimplexNoise implementation with error handling
         class SimplexNoise {
-            constructor() {
+            constructor(seed = Math.random()) {
                 this.grad3 = [[1,1,0],[-1,1,0],[1,-1,0],[-1,-1,0],
                              [1,0,1],[-1,0,1],[1,0,-1],[-1,0,-1],
                              [0,1,1],[0,-1,1],[0,1,-1],[0,-1,-1]];
                 
                 this.p = [];
-                for(let i=0; i<256; i++) {
-                    this.p[i] = Math.floor(Math.random()*256);
+                for(let i = 0; i < 256; i++) {
+                    this.p[i] = Math.floor((seed * 256 * (i + 1)) % 256);
                 }
                 
                 this.perm = [];
-                for(let i=0; i<512; i++) {
+                for(let i = 0; i < 512; i++) {
                     this.perm[i] = this.p[i & 255];
                 }
             }
             
-            dot(g, x, y) {
-                return g[0]*x + g[1]*y;
+            dot(g, x, y, z = 0) {
+                if (!g || g.length < 2) {
+                    console.warn('Invalid gradient vector:', g);
+                    return 0;
+                }
+                return g[0] * x + g[1] * y + (g[2] || 0) * z;
             }
             
             noise2D(xin, yin) {
-                const F2 = 0.5*(Math.sqrt(3.0)-1.0);
-                const s = (xin+yin)*F2;
-                const i = Math.floor(xin+s);
-                const j = Math.floor(yin+s);
+                if (!isFinite(xin) || !isFinite(yin)) {
+                    return 0;
+                }
                 
-                const G2 = (3.0-Math.sqrt(3.0))/6.0;
-                const t = (i+j)*G2;
-                const X0 = i-t;
-                const Y0 = j-t;
-                const x0 = xin-X0;
-                const y0 = yin-Y0;
+                const F2 = 0.5 * (Math.sqrt(3.0) - 1.0);
+                const s = (xin + yin) * F2;
+                const i = Math.floor(xin + s);
+                const j = Math.floor(yin + s);
+                
+                const G2 = (3.0 - Math.sqrt(3.0)) / 6.0;
+                const t = (i + j) * G2;
+                const X0 = i - t;
+                const Y0 = j - t;
+                const x0 = xin - X0;
+                const y0 = yin - Y0;
                 
                 let i1, j1;
-                if(x0>y0) {i1=1; j1=0;}
-                else {i1=0; j1=1;}
+                if (x0 > y0) { i1 = 1; j1 = 0; }
+                else { i1 = 0; j1 = 1; }
                 
                 const x1 = x0 - i1 + G2;
                 const y1 = y0 - j1 + G2;
@@ -414,32 +451,129 @@
                 
                 const ii = i & 255;
                 const jj = j & 255;
-                const gi0 = this.perm[ii+this.perm[jj]] % 12;
-                const gi1 = this.perm[ii+i1+this.perm[jj+j1]] % 12;
-                const gi2 = this.perm[ii+1+this.perm[jj+1]] % 12;
                 
-                let t0 = 0.5 - x0*x0-y0*y0;
+                // Safe gradient index calculation with bounds checking
+                const gi0 = Math.abs(this.perm[ii + this.perm[jj]]) % 12;
+                const gi1 = Math.abs(this.perm[ii + i1 + this.perm[jj + j1]]) % 12;
+                const gi2 = Math.abs(this.perm[ii + 1 + this.perm[jj + 1]]) % 12;
+                
+                // Get gradients with safety checks
+                const grad0 = this.grad3[gi0] || [1, 1, 0];
+                const grad1 = this.grad3[gi1] || [1, 1, 0];
+                const grad2 = this.grad3[gi2] || [1, 1, 0];
+                
+                let t0 = 0.5 - x0 * x0 - y0 * y0;
                 let n0 = 0;
-                if(t0>=0) {
+                if (t0 >= 0) {
                     t0 *= t0;
-                    n0 = t0 * t0 * this.dot(this.grad3[gi0], x0, y0);
+                    n0 = t0 * t0 * this.dot(grad0, x0, y0);
                 }
                 
-                let t1 = 0.5 - x1*x1-y1*y1;
+                let t1 = 0.5 - x1 * x1 - y1 * y1;
                 let n1 = 0;
-                if(t1>=0) {
+                if (t1 >= 0) {
                     t1 *= t1;
-                    n1 = t1 * t1 * this.dot(this.grad3[gi1], x1, y1);
+                    n1 = t1 * t1 * this.dot(grad1, x1, y1);
                 }
                 
-                let t2 = 0.5 - x2*x2-y2*y2;
+                let t2 = 0.5 - x2 * x2 - y2 * y2;
                 let n2 = 0;
-                if(t2>=0) {
+                if (t2 >= 0) {
                     t2 *= t2;
-                    n2 = t2 * t2 * this.dot(this.grad3[gi2], x2, y2);
+                    n2 = t2 * t2 * this.dot(grad2, x2, y2);
                 }
                 
-                return 70.0 * (n0 + n1 + n2);
+                const result = 70.0 * (n0 + n1 + n2);
+                return isFinite(result) ? result : 0;
+            }
+
+            noise3D(xin, yin, zin) {
+                if (!isFinite(xin) || !isFinite(yin) || !isFinite(zin)) {
+                    return 0;
+                }
+                
+                const F3 = 1.0 / 3.0;
+                const s = (xin + yin + zin) * F3;
+                const i = Math.floor(xin + s);
+                const j = Math.floor(yin + s);
+                const k = Math.floor(zin + s);
+                
+                const G3 = 1.0 / 6.0;
+                const t = (i + j + k) * G3;
+                const X0 = i - t;
+                const Y0 = j - t;
+                const Z0 = k - t;
+                const x0 = xin - X0;
+                const y0 = yin - Y0;
+                const z0 = zin - Z0;
+                
+                let i1, j1, k1, i2, j2, k2;
+                if (x0 >= y0) {
+                    if (y0 >= z0) { i1 = 1; j1 = 0; k1 = 0; i2 = 1; j2 = 1; k2 = 0; }
+                    else if (x0 >= z0) { i1 = 1; j1 = 0; k1 = 0; i2 = 1; j2 = 0; k2 = 1; }
+                    else { i1 = 0; j1 = 0; k1 = 1; i2 = 1; j2 = 0; k2 = 1; }
+                } else {
+                    if (y0 < z0) { i1 = 0; j1 = 0; k1 = 1; i2 = 0; j2 = 1; k2 = 1; }
+                    else if (x0 < z0) { i1 = 0; j1 = 1; k1 = 0; i2 = 0; j2 = 1; k2 = 1; }
+                    else { i1 = 0; j1 = 1; k1 = 0; i2 = 1; j2 = 1; k2 = 0; }
+                }
+                
+                const x1 = x0 - i1 + G3;
+                const y1 = y0 - j1 + G3;
+                const z1 = z0 - k1 + G3;
+                const x2 = x0 - i2 + 2.0 * G3;
+                const y2 = y0 - j2 + 2.0 * G3;
+                const z2 = z0 - k2 + 2.0 * G3;
+                const x3 = x0 - 1.0 + 3.0 * G3;
+                const y3 = y0 - 1.0 + 3.0 * G3;
+                const z3 = z0 - 1.0 + 3.0 * G3;
+                
+                const ii = i & 255;
+                const jj = j & 255;
+                const kk = k & 255;
+                
+                // Safe gradient index calculation with bounds checking
+                const gi0 = Math.abs(this.perm[ii + this.perm[jj + this.perm[kk]]]) % 12;
+                const gi1 = Math.abs(this.perm[ii + i1 + this.perm[jj + j1 + this.perm[kk + k1]]]) % 12;
+                const gi2 = Math.abs(this.perm[ii + i2 + this.perm[jj + j2 + this.perm[kk + k2]]]) % 12;
+                const gi3 = Math.abs(this.perm[ii + 1 + this.perm[jj + 1 + this.perm[kk + 1]]]) % 12;
+                
+                // Get gradients with safety checks
+                const grad0 = this.grad3[gi0] || [1, 1, 0];
+                const grad1 = this.grad3[gi1] || [1, 1, 0];
+                const grad2 = this.grad3[gi2] || [1, 1, 0];
+                const grad3 = this.grad3[gi3] || [1, 1, 0];
+                
+                let t0 = 0.6 - x0 * x0 - y0 * y0 - z0 * z0;
+                let n0 = 0;
+                if (t0 >= 0) {
+                    t0 *= t0;
+                    n0 = t0 * t0 * this.dot(grad0, x0, y0, z0);
+                }
+                
+                let t1 = 0.6 - x1 * x1 - y1 * y1 - z1 * z1;
+                let n1 = 0;
+                if (t1 >= 0) {
+                    t1 *= t1;
+                    n1 = t1 * t1 * this.dot(grad1, x1, y1, z1);
+                }
+                
+                let t2 = 0.6 - x2 * x2 - y2 * y2 - z2 * z2;
+                let n2 = 0;
+                if (t2 >= 0) {
+                    t2 *= t2;
+                    n2 = t2 * t2 * this.dot(grad2, x2, y2, z2);
+                }
+                
+                let t3 = 0.6 - x3 * x3 - y3 * y3 - z3 * z3;
+                let n3 = 0;
+                if (t3 >= 0) {
+                    t3 *= t3;
+                    n3 = t3 * t3 * this.dot(grad3, x3, y3, z3);
+                }
+                
+                const result = 32.0 * (n0 + n1 + n2 + n3);
+                return isFinite(result) ? result : 0;
             }
         }
 
@@ -456,8 +590,8 @@
         let isMouseDown = false;
         
         // World generation - Optimized
-        const cellSize = 75;
-        const viewRadius = 2;
+        const cellSize = 100;
+        const viewRadius = 3;
         const generatedCells = new Map();
         const cellObjects = new Map();
         let objectCount = 0;
@@ -488,24 +622,32 @@
         const torpedoCooldown = 300;
         let lastTorpedoTime = 0;
 
-        // FIXED MODULAR CAVE SYSTEM
-        let caveSystem = {
-            entrances: new Map(),
-            loadedCave: null,
-            inCave: false,
-            nearEntrance: null,
+        // UNDERGROUND CITY SYSTEM - Completely redesigned
+        let undergroundCity = {
+            sinkholes: new Map(),
+            inCity: false,
+            nearSinkhole: null,
             exitPortal: null,
-            rooms: [],
-            corridors: [],
-            roomMeshes: [],
-            corridorMeshes: [],
-            allCaveMeshes: []
+            districts: [],
+            buildings: [],
+            vehicles: [],
+            allCityMeshes: [],
+            generatedChunks: new Map(),
+            currentSeed: null,
+            citySize: 800,  // Much larger than cave system
+            districtTypes: ['ruins', 'industrial', 'residential', 'city_center', 'outskirts'],
+            currentDistrict: 'surface',
+            bossArena: null,
+            bossActive: false,
+            cityLights: [],
+            debrisFields: []
         };
 
-        // Initialize SimplexNoise
+        // Initialize SimplexNoise instances
         const simplex = new SimplexNoise();
+        let citySimplex = null;
 
-        // Enhanced height function
+        // Enhanced height function for ocean terrain
         function getHeight(x, z, time = 0) {
             const scale1 = 0.005;
             const scale2 = 0.01;
@@ -521,16 +663,853 @@
             return -30 + baseHeight + ridges + hills + details + valleys;
         }
 
+        // Underground city terrain generation
+        function getCityHeight(x, z) {
+            if (!citySimplex) {
+                console.warn('citySimplex not initialized, returning default height');
+                return -80;
+            }
+            
+            try {
+                const scale1 = 0.003;
+                const scale2 = 0.006;
+                const scale3 = 0.012;
+                
+                const baseHeight = citySimplex.noise2D(x * scale1, z * scale1) * 25;
+                const streets = Math.abs(citySimplex.noise2D(x * scale2, z * scale2)) * 15;
+                const details = citySimplex.noise2D(x * scale3, z * scale3) * 8;
+                
+                const result = -80 + baseHeight + streets + details;
+                return isFinite(result) ? result : -80;
+            } catch (error) {
+                console.warn('Error in getCityHeight:', error);
+                return -80;
+            }
+        }
+
+        // Determine district type based on position
+        function getDistrictType(x, z) {
+            const centerX = 0;
+            const centerZ = 0;
+            const distance = Math.sqrt((x - centerX) * (x - centerX) + (z - centerZ) * (z - centerZ));
+            
+            if (distance < 80) return 'city_center';
+            if (distance < 160) return 'residential';
+            if (distance < 240) return 'industrial';
+            if (distance < 320) return 'ruins';
+            return 'outskirts';
+        }
+
+        // BUILDING GENERATION SYSTEM
+        
+        // Create skyscraper
+        function createSkyscraper(width, height, depth, district) {
+            const group = new THREE.Group();
+            
+            // Main building structure
+            const buildingGeometry = new THREE.BoxGeometry(width, height, depth);
+            const buildingMaterial = new THREE.MeshPhongMaterial({
+                color: getBuildingColor(district),
+                shininess: 30
+            });
+            const building = new THREE.Mesh(buildingGeometry, buildingMaterial);
+            building.position.y = height / 2;
+            building.castShadow = true;
+            building.receiveShadow = true;
+            group.add(building);
+            
+            // Add floors/windows
+            const floors = Math.floor(height / 4);
+            for (let i = 1; i < floors; i++) {
+                const floorY = (i * height) / floors;
+                
+                // Windows
+                const windowGeometry = new THREE.PlaneGeometry(width * 0.8, 2);
+                const windowMaterial = new THREE.MeshPhongMaterial({
+                    color: Math.random() > 0.3 ? 0x88aaff : 0x333333,
+                    transparent: true,
+                    opacity: 0.7,
+                    shininess: 100
+                });
+                
+                // Front and back windows
+                const frontWindow = new THREE.Mesh(windowGeometry, windowMaterial);
+                frontWindow.position.set(0, floorY, depth / 2 + 0.1);
+                group.add(frontWindow);
+                
+                const backWindow = new THREE.Mesh(windowGeometry, windowMaterial);
+                backWindow.position.set(0, floorY, -depth / 2 - 0.1);
+                backWindow.rotation.y = Math.PI;
+                group.add(backWindow);
+            }
+            
+            // Rooftop details
+            if (Math.random() > 0.5) {
+                const rooftopGeometry = new THREE.BoxGeometry(width * 0.3, height * 0.1, depth * 0.3);
+                const rooftop = new THREE.Mesh(rooftopGeometry, buildingMaterial);
+                rooftop.position.y = height + (height * 0.05);
+                group.add(rooftop);
+            }
+            
+            // Emergency lighting
+            if (Math.random() > 0.6) {
+                const emergencyLight = new THREE.PointLight(0xff4444, 2, 50);
+                emergencyLight.position.set(0, height + 5, 0);
+                group.add(emergencyLight);
+                undergroundCity.cityLights.push(emergencyLight);
+            }
+            
+            return group;
+        }
+        
+        // Create residential house
+        function createHouse(district) {
+            const group = new THREE.Group();
+            
+            const width = 8 + Math.random() * 6;
+            const height = 6 + Math.random() * 4;
+            const depth = 8 + Math.random() * 6;
+            
+            // Main house structure
+            const houseGeometry = new THREE.BoxGeometry(width, height, depth);
+            const houseMaterial = new THREE.MeshPhongMaterial({
+                color: getHouseColor(district),
+                shininess: 20
+            });
+            const house = new THREE.Mesh(houseGeometry, houseMaterial);
+            house.position.y = height / 2;
+            house.castShadow = true;
+            house.receiveShadow = true;
+            group.add(house);
+            
+            // Roof
+            const roofGeometry = new THREE.ConeGeometry(width * 0.8, height * 0.4, 4);
+            const roofMaterial = new THREE.MeshPhongMaterial({
+                color: 0x442222,
+                shininess: 10
+            });
+            const roof = new THREE.Mesh(roofGeometry, roofMaterial);
+            roof.position.y = height + (height * 0.2);
+            roof.rotation.y = Math.PI / 4;
+            group.add(roof);
+            
+            // Door
+            const doorGeometry = new THREE.BoxGeometry(1.5, 3, 0.2);
+            const doorMaterial = new THREE.MeshPhongMaterial({ color: 0x664422 });
+            const door = new THREE.Mesh(doorGeometry, doorMaterial);
+            door.position.set(0, 1.5, depth / 2 + 0.1);
+            group.add(door);
+            
+            // Windows
+            const windowGeometry = new THREE.PlaneGeometry(2, 2);
+            const windowMaterial = new THREE.MeshPhongMaterial({
+                color: Math.random() > 0.4 ? 0x88aaff : 0x222222,
+                transparent: true,
+                opacity: 0.8
+            });
+            
+            const leftWindow = new THREE.Mesh(windowGeometry, windowMaterial);
+            leftWindow.position.set(-width / 3, height / 2, depth / 2 + 0.1);
+            group.add(leftWindow);
+            
+            const rightWindow = new THREE.Mesh(windowGeometry, windowMaterial);
+            rightWindow.position.set(width / 3, height / 2, depth / 2 + 0.1);
+            group.add(rightWindow);
+            
+            return group;
+        }
+        
+        // Create industrial building
+        function createFactory(district) {
+            const group = new THREE.Group();
+            
+            const width = 20 + Math.random() * 15;
+            const height = 15 + Math.random() * 10;
+            const depth = 30 + Math.random() * 20;
+            
+            // Main factory building
+            const factoryGeometry = new THREE.BoxGeometry(width, height, depth);
+            const factoryMaterial = new THREE.MeshPhongMaterial({
+                color: 0x444444,
+                shininess: 10
+            });
+            const factory = new THREE.Mesh(factoryGeometry, factoryMaterial);
+            factory.position.y = height / 2;
+            factory.castShadow = true;
+            factory.receiveShadow = true;
+            group.add(factory);
+            
+            // Smokestacks
+            const stackCount = 1 + Math.floor(Math.random() * 3);
+            for (let i = 0; i < stackCount; i++) {
+                const stackGeometry = new THREE.CylinderGeometry(1.5, 2, height * 1.5, 8);
+                const stackMaterial = new THREE.MeshPhongMaterial({ color: 0x333333 });
+                const stack = new THREE.Mesh(stackGeometry, stackMaterial);
+                
+                stack.position.set(
+                    (Math.random() - 0.5) * width * 0.8,
+                    height + (height * 0.75),
+                    (Math.random() - 0.5) * depth * 0.8
+                );
+                stack.castShadow = true;
+                group.add(stack);
+            }
+            
+            // Industrial lighting
+            const industrialLight = new THREE.PointLight(0xffaa44, 3, 60);
+            industrialLight.position.set(0, height + 8, 0);
+            group.add(industrialLight);
+            undergroundCity.cityLights.push(industrialLight);
+            
+            // Loading docks
+            const dockGeometry = new THREE.BoxGeometry(8, 3, 4);
+            const dock = new THREE.Mesh(dockGeometry, factoryMaterial);
+            dock.position.set(width / 2 + 4, 1.5, 0);
+            group.add(dock);
+            
+            return group;
+        }
+        
+        // Create vehicle (car, truck, bus)
+        function createVehicle(type = 'car') {
+            const group = new THREE.Group();
+            
+            let vehicleColor = new THREE.Color(
+                Math.random() * 0.8,
+                Math.random() * 0.8,
+                Math.random() * 0.8
+            );
+            
+            const vehicleMaterial = new THREE.MeshPhongMaterial({
+                color: vehicleColor,
+                shininess: 50
+            });
+            
+            let bodyGeometry, width, height, length;
+            
+            switch (type) {
+                case 'car':
+                    width = 2; height = 1.5; length = 4;
+                    bodyGeometry = new THREE.BoxGeometry(width, height, length);
+                    break;
+                case 'truck':
+                    width = 2.5; height = 3; length = 8;
+                    bodyGeometry = new THREE.BoxGeometry(width, height, length);
+                    break;
+                case 'bus':
+                    width = 2.5; height = 3.5; length = 12;
+                    bodyGeometry = new THREE.BoxGeometry(width, height, length);
+                    break;
+                default:
+                    width = 2; height = 1.5; length = 4;
+                    bodyGeometry = new THREE.BoxGeometry(width, height, length);
+            }
+            
+            const body = new THREE.Mesh(bodyGeometry, vehicleMaterial);
+            body.position.y = height / 2;
+            body.castShadow = true;
+            body.receiveShadow = true;
+            group.add(body);
+            
+            // Wheels
+            const wheelGeometry = new THREE.CylinderGeometry(0.4, 0.4, 0.3, 8);
+            const wheelMaterial = new THREE.MeshPhongMaterial({ color: 0x222222 });
+            
+            const wheelPositions = [
+                [-width/2 - 0.2, 0.4, length/3],
+                [width/2 + 0.2, 0.4, length/3],
+                [-width/2 - 0.2, 0.4, -length/3],
+                [width/2 + 0.2, 0.4, -length/3]
+            ];
+            
+            wheelPositions.forEach(pos => {
+                const wheel = new THREE.Mesh(wheelGeometry, wheelMaterial);
+                wheel.position.set(pos[0], pos[1], pos[2]);
+                wheel.rotation.z = Math.PI / 2;
+                group.add(wheel);
+            });
+            
+            // Windows
+            if (type === 'bus') {
+                const windowGeometry = new THREE.PlaneGeometry(length * 0.8, height * 0.4);
+                const windowMaterial = new THREE.MeshPhongMaterial({
+                    color: 0x88ccff,
+                    transparent: true,
+                    opacity: 0.6
+                });
+                
+                const sideWindow = new THREE.Mesh(windowGeometry, windowMaterial);
+                sideWindow.position.set(width/2 + 0.1, height * 0.7, 0);
+                sideWindow.rotation.y = Math.PI / 2;
+                group.add(sideWindow);
+            }
+            
+            // Random damage/rust
+            if (Math.random() > 0.7) {
+                body.material.color.multiplyScalar(0.6); // Make it look damaged
+            }
+            
+            return group;
+        }
+        
+        // Create debris field
+        function createDebrisField(centerX, centerZ) {
+            const group = new THREE.Group();
+            const debrisCount = 8 + Math.floor(Math.random() * 12);
+            
+            for (let i = 0; i < debrisCount; i++) {
+                const debrisGeometry = new THREE.DodecahedronGeometry(
+                    1 + Math.random() * 3,
+                    Math.floor(Math.random() * 2)
+                );
+                
+                const debrisMaterial = new THREE.MeshPhongMaterial({
+                    color: new THREE.Color(
+                        0.2 + Math.random() * 0.3,
+                        0.2 + Math.random() * 0.3,
+                        0.2 + Math.random() * 0.3
+                    ),
+                    shininess: 5
+                });
+                
+                const debris = new THREE.Mesh(debrisGeometry, debrisMaterial);
+                debris.position.set(
+                    (Math.random() - 0.5) * 30,
+                    Math.random() * 5,
+                    (Math.random() - 0.5) * 30
+                );
+                debris.rotation.set(
+                    Math.random() * Math.PI,
+                    Math.random() * Math.PI,
+                    Math.random() * Math.PI
+                );
+                debris.castShadow = true;
+                debris.receiveShadow = true;
+                
+                group.add(debris);
+            }
+            
+            return group;
+        }
+        
+        // Create central spire (boss arena)
+        function createCentralSpire() {
+            const group = new THREE.Group();
+            
+            // Main spire
+            const spireGeometry = new THREE.CylinderGeometry(8, 12, 120, 16);
+            const spireMaterial = new THREE.MeshPhongMaterial({
+                color: 0x444466,
+                shininess: 100
+            });
+            const spire = new THREE.Mesh(spireGeometry, spireMaterial);
+            spire.position.y = 60;
+            spire.castShadow = true;
+            spire.receiveShadow = true;
+            group.add(spire);
+            
+            // Spire details and platforms
+            for (let i = 0; i < 5; i++) {
+                const platformGeometry = new THREE.CylinderGeometry(15, 15, 3, 12);
+                const platform = new THREE.Mesh(platformGeometry, spireMaterial);
+                platform.position.y = 20 + (i * 20);
+                group.add(platform);
+            }
+            
+            // Energy core at top
+            const coreGeometry = new THREE.SphereGeometry(6, 16, 16);
+            const coreMaterial = new THREE.MeshPhongMaterial({
+                color: 0x4488ff,
+                shininess: 200,
+                transparent: true,
+                opacity: 0.8
+            });
+            const core = new THREE.Mesh(coreGeometry, coreMaterial);
+            core.position.y = 125;
+            group.add(core);
+            
+            // Powerful central light
+            const spireLight = new THREE.PointLight(0x4488ff, 5, 200);
+            spireLight.position.set(0, 125, 0);
+            group.add(spireLight);
+            undergroundCity.cityLights.push(spireLight);
+            
+            // Mysterious energy effects
+            const energyRings = 3;
+            for (let i = 0; i < energyRings; i++) {
+                const ringGeometry = new THREE.RingGeometry(10 + i * 5, 12 + i * 5, 16);
+                const ringMaterial = new THREE.MeshPhongMaterial({
+                    color: 0x4488ff,
+                    transparent: true,
+                    opacity: 0.4,
+                    side: THREE.DoubleSide
+                });
+                const ring = new THREE.Mesh(ringGeometry, ringMaterial);
+                ring.position.y = 125 + i * 8;
+                ring.rotation.x = Math.PI / 2;
+                group.add(ring);
+                
+                ring.userData = {
+                    rotationSpeed: 0.01 + i * 0.005,
+                    originalY: ring.position.y
+                };
+            }
+            
+            return group;
+        }
+        
+        // Get building color based on district
+        function getBuildingColor(district) {
+            switch (district) {
+                case 'city_center': return 0x666677;
+                case 'residential': return 0x775544;
+                case 'industrial': return 0x444444;
+                case 'ruins': return 0x332222;
+                case 'outskirts': return 0x445533;
+                default: return 0x555555;
+            }
+        }
+        
+        // Get house color based on district
+        function getHouseColor(district) {
+            switch (district) {
+                case 'residential': return 0x887755;
+                case 'outskirts': return 0x556644;
+                case 'ruins': return 0x443322;
+                default: return 0x665544;
+            }
+        }
+
+        // Generate underground city layout
+        function generateUndergroundCity(sinkholePos, seed) {
+            console.log('Generating massive underground city...');
+            
+            citySimplex = new SimplexNoise(seed);
+            undergroundCity.currentSeed = seed;
+            
+            // Clear previous city data
+            undergroundCity.districts = [];
+            undergroundCity.buildings = [];
+            undergroundCity.vehicles = [];
+            undergroundCity.allCityMeshes = [];
+            undergroundCity.cityLights = [];
+            undergroundCity.debrisFields = [];
+            
+            // Create the city group FIRST before any district generation
+            const cityGroup = new THREE.Group();
+            undergroundCity.loadedCity = cityGroup;
+            scene.add(cityGroup);
+            
+            console.log('City group created and assigned to undergroundCity.loadedCity');
+            
+            // Create underground city floor/terrain
+            createUndergroundCityTerrain();
+            
+            // Generate district layout
+            const districtSize = 120;
+            const districtsPerSide = 7; // 7x7 grid of districts
+            
+            for (let dx = 0; dx < districtsPerSide; dx++) {
+                for (let dz = 0; dz < districtsPerSide; dz++) {
+                    const centerX = (dx - Math.floor(districtsPerSide / 2)) * districtSize;
+                    const centerZ = (dz - Math.floor(districtsPerSide / 2)) * districtSize;
+                    
+                    const districtType = getDistrictType(centerX, centerZ);
+                    const districtInfo = {
+                        id: `${dx}-${dz}`,
+                        type: districtType,
+                        centerX: centerX,
+                        centerZ: centerZ,
+                        size: districtSize,
+                        generated: false,
+                        buildingCount: 0
+                    };
+                    
+                    undergroundCity.districts.push(districtInfo);
+                }
+            }
+            
+            console.log(`Generated city layout with ${undergroundCity.districts.length} districts`);
+            
+            // Generate entrance area immediately - but safely
+            const cityCenter = undergroundCity.districts.find(d => d.type === 'city_center');
+            if (cityCenter && undergroundCity.loadedCity) {
+                generateDistrictContent(cityCenter);
+            }
+            
+            // Add atmospheric lighting
+            const cityAmbient = new THREE.AmbientLight(0x332244, 0.4);
+            cityAmbient.name = 'cityAmbient';
+            cityGroup.add(cityAmbient);
+            
+            // Add mysterious city fog/particles effect
+            const fogLight = new THREE.PointLight(0x4466aa, 1, 100);
+            fogLight.position.set(0, -60, 0);
+            cityGroup.add(fogLight);
+            
+            console.log('City generation complete');
+            
+            return undergroundCity;
+        }
+        
+        // Create underground city terrain/floor
+        function createUndergroundCityTerrain() {
+            console.log('Creating underground city terrain...');
+            
+            const terrainSize = 1000;
+            const segments = 50;
+            const terrainGeometry = new THREE.PlaneGeometry(terrainSize, terrainSize, segments, segments);
+            terrainGeometry.rotateX(-Math.PI / 2);
+            
+            // Apply height variations to the terrain
+            const vertices = terrainGeometry.attributes.position.array;
+            const colors = new Float32Array(vertices.length);
+            
+            for (let i = 0; i < vertices.length; i += 3) {
+                const x = vertices[i];
+                const z = vertices[i + 2];
+                
+                // Create subtle height variations for city terrain
+                const height = getCityHeight(x, z);
+                vertices[i + 1] = height;
+                
+                // Color the terrain like city streets/ground
+                const grayValue = 0.15 + Math.random() * 0.1;
+                colors[i] = grayValue;     // R
+                colors[i + 1] = grayValue; // G  
+                colors[i + 2] = grayValue + 0.05; // B (slightly blue tint)
+            }
+            
+            terrainGeometry.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+            terrainGeometry.computeVertexNormals();
+            
+            const terrainMaterial = new THREE.MeshPhongMaterial({
+                vertexColors: true,
+                shininess: 20
+            });
+            
+            const cityTerrain = new THREE.Mesh(terrainGeometry, terrainMaterial);
+            cityTerrain.receiveShadow = true;
+            cityTerrain.name = 'cityTerrain';
+            
+            undergroundCity.loadedCity.add(cityTerrain);
+            console.log('Underground city terrain created');
+        }
+        
+        // Generate content for a specific district
+        function generateDistrictContent(district) {
+            if (district.generated) return;
+            
+            // Safety check - ensure we have a valid city group to add to
+            if (!undergroundCity.loadedCity) {
+                console.warn('No loaded city group available, skipping district generation');
+                return;
+            }
+            
+            console.log(`Generating ${district.type} district at (${district.centerX}, ${district.centerZ})`);
+            
+            try {
+                const buildingDensity = getBuildingDensity(district.type);
+                const buildingsToGenerate = Math.floor(buildingDensity * adaptiveQuality);
+                
+                // Create a grid-based placement system for better spacing
+                const gridSize = Math.ceil(Math.sqrt(buildingsToGenerate));
+                const cellSize = district.size / gridSize;
+                const usedPositions = new Set();
+                
+                for (let i = 0; i < buildingsToGenerate; i++) {
+                    const building = generateBuildingForDistrict(district);
+                    if (building && undergroundCity.loadedCity) {
+                        
+                        // Grid-based placement with randomization
+                        let placed = false;
+                        let attempts = 0;
+                        
+                        while (!placed && attempts < 20) {
+                            const gridX = Math.floor(Math.random() * gridSize);
+                            const gridZ = Math.floor(Math.random() * gridSize);
+                            const posKey = `${gridX}-${gridZ}`;
+                            
+                            if (!usedPositions.has(posKey)) {
+                                usedPositions.add(posKey);
+                                
+                                const baseX = district.centerX - district.size/2 + (gridX * cellSize) + (cellSize/2);
+                                const baseZ = district.centerZ - district.size/2 + (gridZ * cellSize) + (cellSize/2);
+                                
+                                // Add some randomness within the cell
+                                const offsetX = (Math.random() - 0.5) * cellSize * 0.6;
+                                const offsetZ = (Math.random() - 0.5) * cellSize * 0.6;
+                                
+                                building.position.set(
+                                    baseX + offsetX,
+                                    getCityHeight(baseX + offsetX, baseZ + offsetZ), // Use actual position for height
+                                    baseZ + offsetZ
+                                );
+                                
+                                building.rotation.y = Math.random() * Math.PI * 2;
+                                
+                                undergroundCity.loadedCity.add(building);
+                                undergroundCity.buildings.push(building);
+                                undergroundCity.allCityMeshes.push(building);
+                                district.buildingCount++;
+                                objectCount++;
+                                placed = true;
+                            }
+                            attempts++;
+                        }
+                        
+                        // Fallback to random placement if grid fails
+                        if (!placed) {
+                            const finalX = district.centerX + (Math.random() - 0.5) * district.size * 0.8;
+                            const finalZ = district.centerZ + (Math.random() - 0.5) * district.size * 0.8;
+                            
+                            building.position.set(
+                                finalX,
+                                getCityHeight(finalX, finalZ),
+                                finalZ
+                            );
+                            
+                            building.rotation.y = Math.random() * Math.PI * 2;
+                            
+                            undergroundCity.loadedCity.add(building);
+                            undergroundCity.buildings.push(building);
+                            undergroundCity.allCityMeshes.push(building);
+                            district.buildingCount++;
+                            objectCount++;
+                        }
+                    }
+                }
+                
+                // Add vehicles for some districts with better spacing
+                if (['residential', 'industrial', 'city_center'].includes(district.type) && undergroundCity.loadedCity) {
+                    const vehicleCount = Math.floor((5 + Math.random() * 10) * adaptiveQuality);
+                    for (let i = 0; i < vehicleCount; i++) {
+                        const vehicleType = getRandomVehicleType(district.type);
+                        const vehicle = createVehicle(vehicleType);
+                        
+                        // Place vehicles along "streets" between buildings
+                        const streetX = district.centerX + (Math.random() - 0.5) * district.size * 0.9;
+                        const streetZ = district.centerZ + (Math.random() - 0.5) * district.size * 0.9;
+                        
+                        vehicle.position.set(
+                            streetX,
+                            getCityHeight(streetX, streetZ) + 1,
+                            streetZ
+                        );
+                        
+                        vehicle.rotation.y = Math.random() * Math.PI * 2;
+                        
+                        // Random tilting for realism
+                        vehicle.rotation.x = (Math.random() - 0.5) * 0.3;
+                        vehicle.rotation.z = (Math.random() - 0.5) * 0.3;
+                        
+                        undergroundCity.loadedCity.add(vehicle);
+                        undergroundCity.vehicles.push(vehicle);
+                        undergroundCity.allCityMeshes.push(vehicle);
+                        objectCount++;
+                    }
+                }
+                
+                // Add debris fields
+                if (['ruins', 'outskirts'].includes(district.type) && undergroundCity.loadedCity) {
+                    const debrisField = createDebrisField(district.centerX, district.centerZ);
+                    const debrisX = district.centerX + (Math.random() - 0.5) * district.size * 0.5;
+                    const debrisZ = district.centerZ + (Math.random() - 0.5) * district.size * 0.5;
+                    debrisField.position.set(debrisX, getCityHeight(debrisX, debrisZ), debrisZ);
+                    
+                    undergroundCity.loadedCity.add(debrisField);
+                    undergroundCity.debrisFields.push(debrisField);
+                    undergroundCity.allCityMeshes.push(debrisField);
+                    objectCount++;
+                }
+                
+                // Special: Add central spire to city center
+                if (district.type === 'city_center' && !undergroundCity.bossArena && undergroundCity.loadedCity) {
+                    const spire = createCentralSpire();
+                    const spireX = district.centerX;
+                    const spireZ = district.centerZ;
+                    const spireY = getCityHeight(spireX, spireZ);
+                    spire.position.set(spireX, spireY, spireZ);
+                    
+                    undergroundCity.loadedCity.add(spire);
+                    undergroundCity.bossArena = spire;
+                    undergroundCity.allCityMeshes.push(spire);
+                    objectCount++;
+                    
+                    console.log(`Created central spire/boss arena at (${spireX}, ${spireY}, ${spireZ})`);
+                }
+                
+                district.generated = true;
+                console.log(`Generated ${district.type} district with ${district.buildingCount} buildings`);
+                
+            } catch (error) {
+                console.error(`Error generating district ${district.type} at (${district.centerX}, ${district.centerZ}):`, error);
+                // Mark as generated even if failed to prevent infinite retry
+                district.generated = true;
+            }
+        }
+        
+        // Get building density for district type
+        function getBuildingDensity(districtType) {
+            switch (districtType) {
+                case 'city_center': return 8;  // Reduced from 15
+                case 'residential': return 6;  // Reduced from 12
+                case 'industrial': return 5;   // Reduced from 8
+                case 'ruins': return 4;        // Reduced from 6
+                case 'outskirts': return 3;    // Reduced from 4
+                default: return 3;
+            }
+        }
+        
+        // Generate appropriate building for district
+        function generateBuildingForDistrict(district) {
+            try {
+                switch (district.type) {
+                    case 'city_center':
+                        if (Math.random() > 0.3) {
+                            return createSkyscraper(12 + Math.random() * 8, 40 + Math.random() * 60, 12 + Math.random() * 8, district.type);
+                        } else {
+                            return createFactory(district.type);
+                        }
+                    case 'residential':
+                        return Math.random() > 0.7 ? 
+                            createSkyscraper(8 + Math.random() * 4, 20 + Math.random() * 20, 8 + Math.random() * 4, district.type) :
+                            createHouse(district.type);
+                    case 'industrial':
+                        return createFactory(district.type);
+                    case 'ruins':
+                        if (Math.random() > 0.6) {
+                            const building = createSkyscraper(8 + Math.random() * 6, 15 + Math.random() * 25, 8 + Math.random() * 6, district.type);
+                            // Make it look damaged
+                            if (building && building.children) {
+                                building.children.forEach(child => {
+                                    if (child.material && child.material.color) {
+                                        child.material.color.multiplyScalar(0.5);
+                                    }
+                                });
+                            }
+                            return building;
+                        } else {
+                            return createHouse(district.type);
+                        }
+                    case 'outskirts':
+                        return createHouse(district.type);
+                    default:
+                        return createHouse(district.type);
+                }
+            } catch (error) {
+                console.error('Error generating building for district:', district.type, error);
+                return null;
+            }
+        }
+        
+        // Get random vehicle type for district
+        function getRandomVehicleType(districtType) {
+            switch (districtType) {
+                case 'city_center':
+                    const cityTypes = ['car', 'bus', 'truck'];
+                    return cityTypes[Math.floor(Math.random() * cityTypes.length)];
+                case 'industrial':
+                    return Math.random() > 0.5 ? 'truck' : 'car';
+                case 'residential':
+                    return Math.random() > 0.8 ? 'bus' : 'car';
+                default:
+                    return 'car';
+            }
+        }
+
+        // Progressive city generation based on player position
+        function updateCityGeneration() {
+            if (!undergroundCity.inCity || !undergroundCity.loadedCity) return;
+            
+            const playerPos = submarine.position;
+            const generationDistance = 150;
+            
+            // Generate district content for nearby ungenerated districts
+            for (const district of undergroundCity.districts) {
+                if (!district.generated) {
+                    const distanceToDistrict = Math.sqrt(
+                        (playerPos.x - district.centerX) * (playerPos.x - district.centerX) +
+                        (playerPos.z - district.centerZ) * (playerPos.z - district.centerZ)
+                    );
+                    
+                    if (distanceToDistrict < generationDistance) {
+                        generateDistrictContent(district);
+                    }
+                }
+            }
+            
+            // Update current district
+            const currentDistrict = getCurrentDistrict(playerPos.x, playerPos.z);
+            if (currentDistrict && currentDistrict !== undergroundCity.currentDistrict) {
+                undergroundCity.currentDistrict = currentDistrict;
+                console.log(`Entered ${currentDistrict} district`);
+            }
+            
+            // Check boss proximity
+            if (undergroundCity.bossArena && !undergroundCity.bossActive) {
+                const bossDistance = playerPos.distanceTo(undergroundCity.bossArena.position);
+                if (bossDistance < 50) {  // Reduced from 80 for more reasonable trigger distance
+                    showBossIndicator(true);
+                } else {
+                    showBossIndicator(false);
+                }
+            }
+        }
+        
+        // Get current district based on position
+        function getCurrentDistrict(x, z) {
+            const districtType = getDistrictType(x, z);
+            return districtType;
+        }
+        
+        // Show/hide boss indicator
+        function showBossIndicator(show) {
+            const indicator = document.getElementById('boss-indicator');
+            indicator.style.display = show ? 'block' : 'none';
+        }
+
+        // Underground city collision detection
+        function checkCityCollision(position) {
+            if (!undergroundCity.inCity || undergroundCity.allCityMeshes.length === 0) return false;
+            
+            const safetyMargin = 4;
+            
+            // Check collision with buildings
+            for (const building of undergroundCity.allCityMeshes) {
+                if (building.children && building.children.length > 0) {
+                    // Check main building structure (usually first child)
+                    const mainStructure = building.children[0];
+                    if (mainStructure && mainStructure.geometry) {
+                        const buildingBox = new THREE.Box3().setFromObject(mainStructure);
+                        buildingBox.expandByScalar(safetyMargin);
+                        
+                        if (buildingBox.containsPoint(position)) {
+                            return true; // Collision detected
+                        }
+                    }
+                }
+            }
+            
+            // Check terrain collision (underground city floor)
+            const terrainHeight = getCityHeight(position.x, position.z);
+            if (position.y <= terrainHeight + 2) { // Reduced from 3 to 2 for better ground contact
+                return true;
+            }
+            
+            return false; // No collision
+        }
+
         // Initialize
         function init() {
-            console.log('Initializing submarine combat & unified cave exploration game...');
+            console.log('Initializing submarine combat & underground city exploration...');
             
             // Scene
             scene = new THREE.Scene();
             scene.fog = new THREE.FogExp2(0x002244, 0.006);
             
             // Camera
-            camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+            camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 2000);
             camera.position.set(0, 20, 30);
             
             // Renderer
@@ -596,7 +1575,7 @@
             setupControls();
             
             // Start
-            console.log('Game initialized successfully');
+            console.log('Underground city system initialized successfully');
             animate();
         }
 
@@ -613,37 +1592,25 @@
             updateTorpedoes();
             updateExplosions();
             
-            // Cave system updates
-            if (!caveSystem.inCave) {
-                checkCaveProximity();
+            // City system updates
+            if (!undergroundCity.inCity) {
+                checkSinkholeProximity();
                 spawnMarineLife();
                 cleanupDistantCreatures();
                 
-                // Update creature AI (only in ocean) - Skip some frames for performance
+                // Update creature AI
                 if (frameCount % Math.ceil(2 / adaptiveQuality) === 0) {
                     sharks.forEach(shark => updateSharkAI(shark, time));
                     turtles.forEach(turtle => updateTurtleAI(turtle, time));
                     jellyfish.forEach(jelly => updateJellyfishAI(jelly, time));
                 }
-            } else {
+            } else if (undergroundCity.inCity && undergroundCity.loadedCity) {
+                // Only run city updates if we're actually in the city AND have a valid city loaded
                 checkExitProximity();
-                
-                // Animate exit portal if it exists
-                if (caveSystem.exitPortal && caveSystem.exitPortal.userData) {
-                    caveSystem.exitPortal.userData.pulsePhase += 0.05;
-                    const pulse = Math.sin(caveSystem.exitPortal.userData.pulsePhase) * 0.3 + 0.7;
-                    
-                    // Animate portal materials
-                    caveSystem.exitPortal.children.forEach(child => {
-                        if (child.material && child.material.color) {
-                            const originalColor = child.material.color.clone();
-                            child.material.color.multiplyScalar(pulse);
-                        }
-                    });
-                }
+                updateCityGeneration();
+                animateCityElements(time);
             }
             
-            // Reduce world population frequency for performance
             if (frameCount % Math.ceil(3 / adaptiveQuality) === 0) {
                 populateWorld();
             }
@@ -657,10 +1624,34 @@
             stats.end();
         }
 
-        // Cave entrance detection
-        function findCaveEntrances(x, z, radius = 100) {
-            const entrances = [];
-            const step = 50;
+        // Animate city elements (lights, spire effects)
+        function animateCityElements(time) {
+            if (!undergroundCity.inCity) return;
+            
+            const t = time * 0.001;
+            
+            // Animate spire energy rings
+            if (undergroundCity.bossArena) {
+                undergroundCity.bossArena.children.forEach(child => {
+                    if (child.userData && child.userData.rotationSpeed) {
+                        child.rotation.z += child.userData.rotationSpeed;
+                        child.position.y = child.userData.originalY + Math.sin(t + child.rotation.z) * 2;
+                    }
+                });
+            }
+            
+            // Flicker city lights
+            undergroundCity.cityLights.forEach((light, index) => {
+                if (Math.random() < 0.02) {
+                    light.intensity = light.intensity > 0 ? 0 : (light.color.r > 0.5 ? 3 : 2);
+                }
+            });
+        }
+
+        // Sinkhole entrance detection (replaces cave entrance detection)
+        function findSinkholes(x, z, radius = 100) {
+            const sinkholes = [];
+            const step = 60;
             
             for (let dx = -radius; dx <= radius; dx += step) {
                 for (let dz = -radius; dz <= radius; dz += step) {
@@ -668,51 +1659,51 @@
                     const testZ = z + dz;
                     const height = getHeight(testX, testZ);
                     
-                    const caveNoise = simplex.noise2D(testX * 0.001, testZ * 0.001);
-                    const shouldHaveCave = height < -40 || (height < -20 && caveNoise > 0.3);
+                    const sinkholeNoise = simplex.noise2D(testX * 0.0008, testZ * 0.0008);
+                    const shouldHaveSinkhole = height < -35 || (height < -25 && sinkholeNoise > 0.4);
                     
-                    if (shouldHaveCave) {
-                        const key = `${Math.floor(testX / 150)}-${Math.floor(testZ / 150)}`;
-                        if (!caveSystem.entrances.has(key)) {
-                            entrances.push({ x: testX, z: testZ, y: height, key: key });
+                    if (shouldHaveSinkhole) {
+                        const key = `${Math.floor(testX / 200)}-${Math.floor(testZ / 200)}`;
+                        if (!undergroundCity.sinkholes.has(key)) {
+                            sinkholes.push({ x: testX, z: testZ, y: height, key: key });
                         }
                     }
                 }
             }
             
-            return entrances;
+            return sinkholes;
         }
 
-        // Create cave entrance visual
-        function createCaveEntrance(x, z, y) {
+        // Create sinkhole entrance visual
+        function createSinkholeEntrance(x, z, y) {
             const group = new THREE.Group();
             
-            // Main entrance hole
-            const holeGeometry = new THREE.CylinderGeometry(12, 16, 8, 16);
+            // Main sinkhole opening
+            const holeGeometry = new THREE.CylinderGeometry(15, 20, 12, 20);
             const holeMaterial = new THREE.MeshPhongMaterial({ 
                 color: 0x000000,
                 transparent: true,
                 opacity: 0.95
             });
             const hole = new THREE.Mesh(holeGeometry, holeMaterial);
-            hole.position.y = y + 4;
+            hole.position.y = y + 6;
             group.add(hole);
             
-            // Rock formation around entrance
-            for (let i = 0; i < 8; i++) {
-                const angle = (i / 8) * Math.PI * 2;
-                const distance = 15 + Math.random() * 8;
+            // Cracked earth around sinkhole
+            for (let i = 0; i < 12; i++) {
+                const angle = (i / 12) * Math.PI * 2;
+                const distance = 18 + Math.random() * 12;
                 
-                const rockGeometry = new THREE.DodecahedronGeometry(3 + Math.random() * 4, 0);
+                const rockGeometry = new THREE.DodecahedronGeometry(2 + Math.random() * 4, 1);
                 const rockMaterial = new THREE.MeshPhongMaterial({ 
-                    color: new THREE.Color(0.15, 0.1, 0.05),
+                    color: new THREE.Color(0.12, 0.08, 0.05),
                     shininess: 10
                 });
                 const rock = new THREE.Mesh(rockGeometry, rockMaterial);
                 
                 rock.position.set(
                     Math.cos(angle) * distance,
-                    y + Math.random() * 5,
+                    y + Math.random() * 4,
                     Math.sin(angle) * distance
                 );
                 rock.rotation.set(
@@ -720,513 +1711,165 @@
                     Math.random() * Math.PI,
                     Math.random() * Math.PI
                 );
-                rock.scale.setScalar(1.2 + Math.random() * 0.6);
+                rock.scale.setScalar(1.5 + Math.random() * 0.8);
                 
                 group.add(rock);
             }
             
-            // Mysterious glow from within
-            const innerGlow = new THREE.PointLight(0x4488ff, 1.5, 50);
-            innerGlow.position.set(0, y - 8, 0);
+            // Eerie glow from depths
+            const innerGlow = new THREE.PointLight(0xffaa44, 2, 80);
+            innerGlow.position.set(0, y - 12, 0);
             group.add(innerGlow);
             
-            // Particle effect
-            const particleCount = 20;
-            const particleGeometry = new THREE.BufferGeometry();
-            const positions = new Float32Array(particleCount * 3);
-            
-            for (let i = 0; i < particleCount; i++) {
-                positions[i * 3] = (Math.random() - 0.5) * 24;
-                positions[i * 3 + 1] = y - Math.random() * 15;
-                positions[i * 3 + 2] = (Math.random() - 0.5) * 24;
-            }
-            
-            particleGeometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
-            const particleMaterial = new THREE.PointsMaterial({
-                color: 0x88aaff,
-                size: 1.0,
-                transparent: true,
-                opacity: 0.8
+            // Warning signs/debris
+            const signGeometry = new THREE.BoxGeometry(3, 4, 0.2);
+            const signMaterial = new THREE.MeshPhongMaterial({ 
+                color: 0x664422,
+                shininess: 10
             });
-            const particles = new THREE.Points(particleGeometry, particleMaterial);
-            group.add(particles);
-            
-            // Add a beacon light that pulses
-            const beaconGeometry = new THREE.SphereGeometry(1, 8, 8);
-            const beaconMaterial = new THREE.MeshPhongMaterial({
-                color: 0x88ccff,
-                shininess: 100
-            });
-            const beacon = new THREE.Mesh(beaconGeometry, beaconMaterial);
-            beacon.position.set(0, y + 8, 0);
-            group.add(beacon);
+            const sign = new THREE.Mesh(signGeometry, signMaterial);
+            sign.position.set(12, y + 2, -8);
+            sign.rotation.y = 0.3;
+            sign.rotation.z = 0.2;
+            group.add(sign);
             
             group.userData = {
-                type: 'cave_entrance',
-                entranceRadius: 16,
-                particles: particles,
-                beacon: beacon,
-                pulsePhase: Math.random() * Math.PI * 2
+                type: 'sinkhole_entrance',
+                entranceRadius: 20
             };
             
             return group;
         }
 
-        // Check cave entrance proximity
-        function checkCaveProximity() {
-            if (caveSystem.inCave) return;
+        // Check sinkhole proximity
+        function checkSinkholeProximity() {
+            if (undergroundCity.inCity) return;
             
             const subPos = submarine.position;
-            let nearestEntrance = null;
+            let nearestSinkhole = null;
             let minDistance = Infinity;
             
-            for (const [key, entrance] of caveSystem.entrances) {
-                const distance = subPos.distanceTo(new THREE.Vector3(entrance.x, entrance.y, entrance.z));
-                if (distance < 40 && distance < minDistance) {
+            for (const [key, sinkhole] of undergroundCity.sinkholes) {
+                const distance = subPos.distanceTo(new THREE.Vector3(sinkhole.x, sinkhole.y, sinkhole.z));
+                if (distance < 50 && distance < minDistance) {
                     minDistance = distance;
-                    nearestEntrance = { key, ...entrance, distance };
+                    nearestSinkhole = { key, ...sinkhole, distance };
                 }
             }
             
-            const indicator = document.getElementById('cave-indicator');
-            if (nearestEntrance && nearestEntrance.distance < 25) {
-                caveSystem.nearEntrance = nearestEntrance;
+            const indicator = document.getElementById('city-indicator');
+            if (nearestSinkhole && nearestSinkhole.distance < 30) {
+                undergroundCity.nearSinkhole = nearestSinkhole;
                 indicator.style.display = 'block';
-                indicator.textContent = `🕳️ Cave Entrance ${nearestEntrance.distance.toFixed(1)}m away - Press C to Enter`;
+                indicator.textContent = `🏙️ Sinkhole to Lost City ${nearestSinkhole.distance.toFixed(1)}m away - Press C to Descend`;
             } else {
-                caveSystem.nearEntrance = null;
+                undergroundCity.nearSinkhole = null;
                 indicator.style.display = 'none';
             }
         }
 
-        // MODULAR CAVE SYSTEM - Using Separate Meshes
-        function createModularCaveSystem(entrance) {
-            console.log('Creating modular cave system with separate meshes...');
+        // Enter underground city
+        function enterUndergroundCity() {
+            if (!undergroundCity.nearSinkhole || undergroundCity.inCity) return;
             
-            // Clear previous cave data
-            caveSystem.rooms = [];
-            caveSystem.corridors = [];
-            caveSystem.roomMeshes = [];
-            caveSystem.corridorMeshes = [];
-            caveSystem.allCaveMeshes = [];
+            console.log('Descending into the lost underground city...');
             
-            // Create cave layout
-            const caveLayout = createCaveLayout(entrance);
-            
-            // Create separate meshes for each room
-            caveLayout.rooms.forEach((room, index) => {
-                const roomMesh = createRoomMesh(room);
-                roomMesh.position.set(room.x, room.y, room.z);
-                roomMesh.userData = { type: 'cave_room', roomId: index, originalRoom: room };
-                caveSystem.roomMeshes.push(roomMesh);
-                caveSystem.allCaveMeshes.push(roomMesh);
+            try {
+                undergroundCity.inCity = true;
                 
-                console.log(`Created room ${index} at (${room.x}, ${room.y}, ${room.z}) with radius ${room.radius}`);
-            });
-            
-            // Create separate meshes for each corridor
-            caveLayout.connections.forEach((corridor, index) => {
-                const corridorMesh = createCorridorMesh(corridor, caveLayout.rooms);
-                corridorMesh.userData = { type: 'cave_corridor', corridorId: index, originalCorridor: corridor };
-                caveSystem.corridorMeshes.push(corridorMesh);
-                caveSystem.allCaveMeshes.push(corridorMesh);
+                // Clear marine life
+                sharks.forEach(shark => scene.remove(shark));
+                turtles.forEach(turtle => scene.remove(turtle));
+                jellyfish.forEach(jelly => scene.remove(jelly));
+                sharks.length = 0;
+                turtles.length = 0;
+                jellyfish.length = 0;
                 
-                console.log(`Created corridor ${index} connecting room ${corridor.from} to room ${corridor.to}`);
-            });
-            
-            // Create cave group
-            const caveGroup = new THREE.Group();
-            
-            // Add all cave meshes to the group
-            caveSystem.allCaveMeshes.forEach(mesh => {
-                caveGroup.add(mesh);
-            });
-            
-            // Add atmospheric elements
-            const atmosphereElements = createCaveAtmosphere(entrance, caveLayout);
-            atmosphereElements.forEach(element => caveGroup.add(element));
-            
-            // Store and add to scene
-            caveSystem.loadedCave = caveGroup;
-            scene.add(caveGroup);
-            
-            console.log(`Modular cave system created with ${caveSystem.roomMeshes.length} rooms and ${caveSystem.corridorMeshes.length} corridors`);
-            
-            return caveLayout;
-        }
-
-        // Create simplified cave layout with circular rooms
-        function createCaveLayout(entrance) {
-            const rooms = [];
-            const connections = [];
-            
-            // Define room configurations - using spherical rooms
-            const roomConfigs = [
-                // Main entrance cavern - ALWAYS at origin for consistent spawning
-                { x: 0, y: -30, z: 0, radius: 25, type: 'entrance' },
-                // Crystal Gallery  
-                { x: 80, y: -25, z: 40, radius: 20, type: 'crystal' },
-                // Underground Lake
-                { x: 50, y: -35, z: 120, radius: 22, type: 'lake' },
-                // Ancient Chamber
-                { x: 150, y: -20, z: 75, radius: 18, type: 'ancient' }
-            ];
-            
-            roomConfigs.forEach((config, index) => {
-                const room = {
-                    id: index,
-                    x: config.x, y: config.y, z: config.z,
-                    radius: config.radius,
-                    type: config.type,
-                    center: new THREE.Vector3(config.x, config.y, config.z)
-                };
-                rooms.push(room);
-                caveSystem.rooms.push(room);
+                // Clear torpedoes
+                torpedoes.forEach(torpedo => scene.remove(torpedo));
+                torpedoes.length = 0;
                 
-                console.log(`Cave room ${index} (${config.type}): center=(${config.x}, ${config.y}, ${config.z}), radius=${config.radius}`);
-            });
-            
-            // Create connections between rooms
-            const connectionPairs = [
-                { from: 0, to: 1 }, // entrance to crystal
-                { from: 1, to: 2 }, // crystal to lake  
-                { from: 1, to: 3 }, // crystal to ancient
-                { from: 2, to: 3 }  // lake to ancient
-            ];
-            
-            connectionPairs.forEach(conn => {
-                const fromRoom = rooms[conn.from];
-                const toRoom = rooms[conn.to];
-                
-                const corridor = {
-                    from: conn.from,
-                    to: conn.to,
-                    start: fromRoom.center,
-                    end: toRoom.center,
-                    radius: 8 // Corridor radius
-                };
-                
-                connections.push(corridor);
-                caveSystem.corridors.push(corridor);
-                
-                console.log(`Cave corridor: room ${conn.from} to room ${conn.to}`);
-            });
-            
-            console.log(`Created cave layout: ${rooms.length} rooms, ${connections.length} corridors`);
-            
-            return { rooms, connections };
-        }
-
-        // Create individual room mesh using sphere geometry
-        function createRoomMesh(room) {
-            const geometry = new THREE.SphereGeometry(room.radius, 16, 12);
-            
-            // Create material with proper front-side rendering and lighting
-            const material = new THREE.MeshPhongMaterial({ 
-                color: getRoomColor(room.type),
-                side: THREE.BackSide, // Use BackSide for hollow interior
-                shininess: 5,
-                transparent: true,
-                opacity: 0.9
-            });
-            
-            const mesh = new THREE.Mesh(geometry, material);
-            mesh.castShadow = false;
-            mesh.receiveShadow = true;
-            
-            return mesh;
-        }
-
-        // Create individual corridor mesh using cylinder geometry
-        function createCorridorMesh(corridor, rooms) {
-            const fromRoom = rooms[corridor.from];
-            const toRoom = rooms[corridor.to];
-            
-            const direction = new THREE.Vector3().subVectors(toRoom.center, fromRoom.center);
-            const distance = direction.length();
-            
-            // Create cylinder geometry for corridor
-            const geometry = new THREE.CylinderGeometry(corridor.radius, corridor.radius, distance, 12);
-            
-            const material = new THREE.MeshPhongMaterial({ 
-                color: 0x2a1a0a,
-                side: THREE.BackSide, // Use BackSide for hollow interior
-                shininess: 5,
-                transparent: true,
-                opacity: 0.9
-            });
-            
-            const mesh = new THREE.Mesh(geometry, material);
-            
-            // Position corridor between rooms
-            const midpoint = fromRoom.center.clone().lerp(toRoom.center, 0.5);
-            mesh.position.copy(midpoint);
-            
-            // Orient corridor to connect the rooms
-            direction.normalize();
-            const up = new THREE.Vector3(0, 1, 0);
-            const angle = Math.acos(up.dot(direction));
-            const axis = new THREE.Vector3().crossVectors(up, direction).normalize();
-            
-            if (axis.length() > 0) {
-                mesh.setRotationFromAxisAngle(axis, angle);
-            }
-            
-            mesh.castShadow = false;
-            mesh.receiveShadow = true;
-            
-            return mesh;
-        }
-
-        // Get room-specific colors
-        function getRoomColor(roomType) {
-            switch (roomType) {
-                case 'entrance': return 0x3a2a1a;
-                case 'crystal': return 0x2a2a3a;
-                case 'lake': return 0x1a2a3a;
-                case 'ancient': return 0x3a3a2a;
-                default: return 0x2a1a0a;
-            }
-        }
-
-        // Enhanced cave collision detection using raycasting
-        function checkCaveCollision(position) {
-            if (!caveSystem.inCave || caveSystem.allCaveMeshes.length === 0) return false;
-            
-            // Check if position is inside any room (safe zones)
-            for (const room of caveSystem.rooms) {
-                const distance = position.distanceTo(room.center);
-                if (distance < room.radius - 3) { // 3 unit safety margin
-                    return false; // Inside room, safe
-                }
-            }
-            
-            // Check if position is inside any corridor
-            for (let i = 0; i < caveSystem.corridors.length; i++) {
-                const corridor = caveSystem.corridors[i];
-                const fromRoom = caveSystem.rooms[corridor.from];
-                const toRoom = caveSystem.rooms[corridor.to];
-                
-                // Project position onto corridor line
-                const corridorStart = fromRoom.center;
-                const corridorEnd = toRoom.center;
-                const corridorDirection = new THREE.Vector3().subVectors(corridorEnd, corridorStart);
-                const corridorLength = corridorDirection.length();
-                corridorDirection.normalize();
-                
-                const toPosition = new THREE.Vector3().subVectors(position, corridorStart);
-                const projectionLength = toPosition.dot(corridorDirection);
-                
-                // Check if projection is within corridor bounds
-                if (projectionLength >= 0 && projectionLength <= corridorLength) {
-                    const projectionPoint = corridorStart.clone().add(corridorDirection.multiplyScalar(projectionLength));
-                    const distanceFromCorridorAxis = position.distanceTo(projectionPoint);
-                    
-                    if (distanceFromCorridorAxis < corridor.radius - 2) { // 2 unit safety margin
-                        return false; // Inside corridor, safe
-                    }
-                }
-            }
-            
-            // Not in any safe zone, collision detected
-            return true;
-        }
-
-        // Create enhanced cave atmosphere - OPTIMIZED
-        function createCaveAtmosphere(entrance, layout) {
-            const atmosphere = [];
-            
-            // Main ambient lighting
-            const mainLight = new THREE.PointLight(0x4466aa, 2, 100);
-            mainLight.position.set(0, -10, 0);
-            atmosphere.push(mainLight);
-            
-            // Room-specific lighting
-            layout.rooms.forEach(room => {
-                const roomLight = new THREE.PointLight(
-                    getRoomLightColor(room.type),
-                    2.0,
-                    room.radius * 1.5
-                );
-                roomLight.position.set(room.x, room.y + room.radius/3, room.z);
-                atmosphere.push(roomLight);
-                
-                // Room decorations
-                if (room.type === 'crystal') {
-                    // Crystal formations
-                    for (let i = 0; i < 4; i++) {
-                        const crystal = createSimpleCrystal();
-                        const angle = (i / 4) * Math.PI * 2;
-                        const distance = room.radius * 0.6;
-                        crystal.position.set(
-                            room.x + Math.cos(angle) * distance,
-                            room.y - room.radius/2,
-                            room.z + Math.sin(angle) * distance
-                        );
-                        crystal.scale.setScalar(2 + Math.random() * 3);
-                        atmosphere.push(crystal);
-                    }
-                } else if (room.type === 'lake') {
-                    // Water surface
-                    const waterGeometry = new THREE.CircleGeometry(room.radius * 0.8, 24);
-                    const waterMaterial = new THREE.MeshPhongMaterial({
-                        color: 0x001133,
-                        transparent: true,
-                        opacity: 0.8,
-                        shininess: 100
+                // Hide ALL ocean objects (kelp, fish, rocks, shipwrecks, sinkholes)
+                console.log('Hiding ocean objects...');
+                for (const [cellKey, objects] of cellObjects) {
+                    [...objects.kelp, ...objects.fish, ...objects.rocks, ...objects.shipwrecks, ...objects.sinkholes].forEach(obj => {
+                        obj.visible = false;
                     });
-                    const water = new THREE.Mesh(waterGeometry, waterMaterial);
-                    water.rotation.x = -Math.PI / 2;
-                    water.position.set(room.x, room.y - room.radius/2, room.z);
-                    atmosphere.push(water);
                 }
-            });
-            
-            // Corridor lighting
-            layout.connections.forEach((corridor) => {
-                const fromRoom = layout.rooms[corridor.from];
-                const toRoom = layout.rooms[corridor.to];
                 
-                // Single light in middle of corridor
-                const midpoint = fromRoom.center.clone().lerp(toRoom.center, 0.5);
-                const corridorLight = new THREE.PointLight(0x3355aa, 1.0, corridor.radius * 3);
-                corridorLight.position.copy(midpoint);
-                atmosphere.push(corridorLight);
-            });
-            
-            // Atmospheric particles
-            const particleCount = 40;
-            const particleGeometry = new THREE.BufferGeometry();
-            const positions = new Float32Array(particleCount * 3);
-            
-            // Distribute particles in rooms
-            for (let i = 0; i < particleCount; i++) {
-                const roomIndex = Math.floor(Math.random() * layout.rooms.length);
-                const room = layout.rooms[roomIndex];
-                const angle = Math.random() * Math.PI * 2;
-                const distance = Math.random() * room.radius * 0.8;
-                positions[i * 3] = room.x + Math.cos(angle) * distance;
-                positions[i * 3 + 1] = room.y + (Math.random() - 0.5) * room.radius;
-                positions[i * 3 + 2] = room.z + Math.sin(angle) * distance;
+                // Change environment
+                scene.fog = new THREE.FogExp2(0x221133, 0.002);
+                document.getElementById('environment').textContent = 'Underground City';
+                document.getElementById('district').textContent = 'Descent Tunnel';
+                document.getElementById('city-indicator').style.display = 'none';
+                
+                // Create the massive city environment
+                const cityLayout = generateUndergroundCity(undergroundCity.nearSinkhole, undergroundCity.nearSinkhole.x * 1000 + undergroundCity.nearSinkhole.z);
+                
+                // Verify city generation succeeded
+                if (!undergroundCity.loadedCity) {
+                    console.error('City generation failed - loadedCity is null');
+                    undergroundCity.inCity = false;
+                    return;
+                }
+                
+                console.log('City generation successful, calculating safe spawn point away from central spire');
+                
+                // Spawn in a safe area AWAY from the central spire - use residential district area
+                const spawnX = -60; // Residential district area
+                const spawnZ = -60;
+                const spawnY = getCityHeight(spawnX, spawnZ) + 10; // 10 units above terrain
+                
+                console.log(`Spawning submarine at safe location (${spawnX}, ${spawnY}, ${spawnZ})`);
+                console.log(`Central spire located at (0, 0) - spawn location chosen to avoid collision`);
+                
+                submarine.position.set(spawnX, spawnY, spawnZ);
+                submarine.rotation.y = 0;
+                
+                // Create exit portal in a different location, away from buildings
+                createExitPortal(-80, spawnY + 5, -80);
+                
+                // Hide ocean terrain
+                environment.chunks.forEach(chunk => {
+                    chunk.visible = false;
+                });
+                
+                // Add city ambient lighting
+                const cityAmbient = new THREE.AmbientLight(0x332244, 0.6);
+                cityAmbient.name = 'cityAmbient';
+                scene.add(cityAmbient);
+                
+                console.log('Successfully entered the lost underground city.');
+                
+            } catch (error) {
+                console.error('Error entering underground city:', error);
+                undergroundCity.inCity = false;
+                
+                // Restore ocean environment on error
+                scene.fog = new THREE.FogExp2(0x002244, 0.006);
+                document.getElementById('environment').textContent = 'Ocean';
+                document.getElementById('district').textContent = 'Ocean Surface';
             }
-            
-            particleGeometry.setAttribute('position', new THREE.BufferAttribute(positions, 3));
-            const particleMaterial = new THREE.PointsMaterial({
-                color: 0x888888,
-                size: 1.0,
-                transparent: true,
-                opacity: 0.6
-            });
-            const ambientParticles = new THREE.Points(particleGeometry, particleMaterial);
-            atmosphere.push(ambientParticles);
-            
-            console.log(`Created cave atmosphere with ${atmosphere.length} elements`);
-            
-            return atmosphere;
         }
 
-        // Get room-specific light color
-        function getRoomLightColor(roomType) {
-            switch (roomType) {
-                case 'crystal': return 0x4488ff;
-                case 'lake': return 0x2266aa;
-                case 'mushroom': return 0x44aa44;
-                case 'ancient': return 0xaa8844;
-                case 'abyss': return 0x441166;
-                default: return 0x3366aa;
-            }
-        }
-
-        // Helper decoration creation functions
-        function createSimpleCrystal() {
-            const geometry = new THREE.OctahedronGeometry(4);
-            const material = new THREE.MeshPhongMaterial({
-                color: 0x4488ff,
-                transparent: true,
-                opacity: 0.8,
-                shininess: 100
-            });
-            return new THREE.Mesh(geometry, material);
-        }
-
-        // Enter cave system
-        function enterCave() {
-            if (!caveSystem.nearEntrance || caveSystem.inCave) return;
-            
-            console.log('Entering modular cave system...');
-            caveSystem.inCave = true;
-            
-            // Clear marine life
-            sharks.forEach(shark => scene.remove(shark));
-            turtles.forEach(turtle => scene.remove(turtle));
-            jellyfish.forEach(jelly => scene.remove(jelly));
-            sharks.length = 0;
-            turtles.length = 0;
-            jellyfish.length = 0;
-            
-            // Clear torpedoes
-            torpedoes.forEach(torpedo => scene.remove(torpedo));
-            torpedoes.length = 0;
-            
-            // Change environment
-            scene.fog = new THREE.FogExp2(0x221133, 0.004);
-            document.getElementById('environment').textContent = 'Underground Caves';
-            document.getElementById('cave-indicator').style.display = 'none';
-            
-            // Create the modular cave environment
-            const caveLayout = createModularCaveSystem(caveSystem.nearEntrance);
-            
-            // VALIDATED SPAWN LOCATION: Always spawn in entrance room center
-            const entranceRoom = caveLayout.rooms[0]; // First room is always entrance
-            const safeSpawnPosition = {
-                x: entranceRoom.x,
-                y: entranceRoom.y, // Center height of room
-                z: entranceRoom.z
-            };
-            
-            console.log(`Spawning submarine at validated position: (${safeSpawnPosition.x}, ${safeSpawnPosition.y}, ${safeSpawnPosition.z})`);
-            console.log(`Entrance room: center=(${entranceRoom.x}, ${entranceRoom.y}, ${entranceRoom.z}), radius=${entranceRoom.radius}`);
-            
-            // Validate spawn position is safe
-            const testCollision = checkCaveCollision(new THREE.Vector3(safeSpawnPosition.x, safeSpawnPosition.y, safeSpawnPosition.z));
-            console.log(`Spawn position collision test: ${testCollision ? 'COLLISION' : 'SAFE'}`);
-            
-            submarine.position.set(safeSpawnPosition.x, safeSpawnPosition.y, safeSpawnPosition.z);
-            
-            // Reset submarine orientation
-            submarine.rotation.y = 0;
-            
-            // Create exit portal near entrance room but outside it
-            createExitPortal(
-                entranceRoom.x + entranceRoom.radius + 15, 
-                entranceRoom.y + 10, 
-                entranceRoom.z
-            );
-            
-            // Hide terrain
-            environment.chunks.forEach(chunk => {
-                chunk.visible = false;
-            });
-            
-            // Add cave ambient lighting
-            const caveAmbient = new THREE.AmbientLight(0x332244, 0.8);
-            caveAmbient.name = 'caveAmbient';
-            scene.add(caveAmbient);
-            
-            // Camera constraints for caves
-            cameraDistance = Math.min(cameraDistance, 25);
-            
-            console.log('Cave entry complete. Submarine positioned in entrance room.');
-        }
-
-        // Create exit portal
+        // Create exit portal (modified for city theme)
         function createExitPortal(x, y, z) {
             const group = new THREE.Group();
+            
+            // Portal platform
+            const platformGeometry = new THREE.CylinderGeometry(12, 14, 2, 16);
+            const platformMaterial = new THREE.MeshPhongMaterial({ 
+                color: 0x666677,
+                shininess: 50
+            });
+            const platform = new THREE.Mesh(platformGeometry, platformMaterial);
+            platform.position.set(x, y, z);
+            group.add(platform);
             
             // Portal ring
             const portalGeometry = new THREE.RingGeometry(8, 12, 24);
             const portalMaterial = new THREE.MeshPhongMaterial({ 
-                color: 0x88ccff,
+                color: 0xffaa44,
                 transparent: true,
                 opacity: 0.9,
                 side: THREE.DoubleSide,
@@ -1234,117 +1877,122 @@
             });
             
             const portal = new THREE.Mesh(portalGeometry, portalMaterial);
-            portal.position.set(x, y, z);
+            portal.position.set(x, y + 8, z);
             portal.rotation.x = -Math.PI / 2;
             group.add(portal);
             
-            // Inner glow
-            const innerGeometry = new THREE.CircleGeometry(8, 24);
-            const innerMaterial = new THREE.MeshPhongMaterial({
-                color: 0x66aaff,
-                transparent: true,
-                opacity: 0.4,
-                side: THREE.DoubleSide,
-                shininess: 100
-            });
-            const inner = new THREE.Mesh(innerGeometry, innerMaterial);
-            inner.position.set(x, y - 0.1, z);
-            inner.rotation.x = -Math.PI / 2;
-            group.add(inner);
-            
             // Portal light
-            const portalLight = new THREE.PointLight(0x88ccff, 3, 40);
-            portalLight.position.set(x, y, z);
+            const portalLight = new THREE.PointLight(0xffaa44, 4, 50);
+            portalLight.position.set(x, y + 8, z);
             group.add(portalLight);
             
+            // Emergency exit sign
+            const signGeometry = new THREE.PlaneGeometry(6, 2);
+            const signMaterial = new THREE.MeshPhongMaterial({ 
+                color: 0xff3333,
+                shininess: 100
+            });
+            const sign = new THREE.Mesh(signGeometry, signMaterial);
+            sign.position.set(x, y + 12, z);
+            group.add(sign);
+            
             scene.add(group);
-            caveSystem.exitPortal = group;
-            caveSystem.exitPortal.position.set(x, y, z);
+            undergroundCity.exitPortal = group;
+            undergroundCity.exitPortal.position.set(x, y, z);
             
             group.userData = {
                 type: 'exit_portal',
-                exitRadius: 12,
-                pulsePhase: 0
+                exitRadius: 14
             };
         }
 
-        // Exit cave system
-        function exitCave() {
-            if (!caveSystem.inCave) return;
+        // Exit underground city
+        function exitUndergroundCity() {
+            if (!undergroundCity.inCity) return;
             
-            console.log('Exiting cave system...');
-            caveSystem.inCave = false;
+            console.log('Ascending from the underground city...');
+            undergroundCity.inCity = false;
             
             // Restore ocean environment
             scene.fog = new THREE.FogExp2(0x002244, 0.006);
             document.getElementById('environment').textContent = 'Ocean';
+            document.getElementById('district').textContent = 'Ocean Surface';
             
             // Show terrain
             environment.chunks.forEach(chunk => {
                 chunk.visible = true;
             });
             
-            // Remove cave lighting
-            const caveAmbient = scene.getObjectByName('caveAmbient');
-            if (caveAmbient) {
-                scene.remove(caveAmbient);
+            // Restore visibility of ALL ocean objects
+            console.log('Restoring ocean objects...');
+            for (const [cellKey, objects] of cellObjects) {
+                [...objects.kelp, ...objects.fish, ...objects.rocks, ...objects.shipwrecks, ...objects.sinkholes].forEach(obj => {
+                    obj.visible = true;
+                });
             }
             
-            // Clean up cave system
-            if (caveSystem.loadedCave) {
-                scene.remove(caveSystem.loadedCave);
-                caveSystem.loadedCave.traverse((child) => {
+            // Remove city lighting
+            const cityAmbient = scene.getObjectByName('cityAmbient');
+            if (cityAmbient) {
+                scene.remove(cityAmbient);
+            }
+            
+            // Clean up city system
+            if (undergroundCity.loadedCity) {
+                scene.remove(undergroundCity.loadedCity);
+                undergroundCity.loadedCity.traverse((child) => {
                     if (child.geometry) child.geometry.dispose();
                     if (child.material) {
                         if (child.material.map) child.material.map.dispose();
                         child.material.dispose();
                     }
                 });
-                caveSystem.loadedCave = null;
+                undergroundCity.loadedCity = null;
             }
             
             // Remove exit portal
-            if (caveSystem.exitPortal) {
-                scene.remove(caveSystem.exitPortal);
-                caveSystem.exitPortal.traverse((child) => {
+            if (undergroundCity.exitPortal) {
+                scene.remove(undergroundCity.exitPortal);
+                undergroundCity.exitPortal.traverse((child) => {
                     if (child.geometry) child.geometry.dispose();
                     if (child.material) child.material.dispose();
                 });
-                caveSystem.exitPortal = null;
+                undergroundCity.exitPortal = null;
             }
             
-            // Clear cave data
-            caveSystem.rooms = [];
-            caveSystem.corridors = [];
-            caveSystem.roomMeshes = [];
-            caveSystem.corridorMeshes = [];
-            caveSystem.allCaveMeshes = [];
+            // Clear city data
+            undergroundCity.districts.forEach(d => d.generated = false);
+            undergroundCity.buildings = [];
+            undergroundCity.vehicles = [];
+            undergroundCity.allCityMeshes = [];
+            undergroundCity.cityLights = [];
+            undergroundCity.debrisFields = [];
+            undergroundCity.bossArena = null;
+            undergroundCity.currentDistrict = 'surface';
             
-            // Position submarine above entrance
-            if (caveSystem.nearEntrance) {
+            // Position submarine above sinkhole
+            if (undergroundCity.nearSinkhole) {
                 submarine.position.set(
-                    caveSystem.nearEntrance.x,
-                    caveSystem.nearEntrance.y + 15,
-                    caveSystem.nearEntrance.z
+                    undergroundCity.nearSinkhole.x,
+                    undergroundCity.nearSinkhole.y + 20,
+                    undergroundCity.nearSinkhole.z
                 );
             }
             
-            // Restore camera constraints
-            cameraDistance = Math.max(cameraDistance, 15);
-            
-            console.log('Cave exit complete.');
+            showBossIndicator(false);
+            console.log('Exited underground city.');
         }
 
         // Check exit portal proximity
         function checkExitProximity() {
-            if (!caveSystem.inCave || !caveSystem.exitPortal) return;
+            if (!undergroundCity.inCity || !undergroundCity.exitPortal) return;
             
-            const distance = submarine.position.distanceTo(caveSystem.exitPortal.position);
+            const distance = submarine.position.distanceTo(undergroundCity.exitPortal.position);
             
-            const indicator = document.getElementById('cave-indicator');
-            if (distance < 20) {
+            const indicator = document.getElementById('city-indicator');
+            if (distance < 30) { // Increased from 25 for easier detection
                 indicator.style.display = 'block';
-                indicator.textContent = `🚪 Exit Portal ${distance.toFixed(1)}m away - Press C to Exit`;
+                indicator.textContent = `🚪 Surface Portal ${distance.toFixed(1)}m away - Press C to Ascend`;
             } else {
                 indicator.style.display = 'none';
             }
@@ -1782,15 +2430,16 @@
                 
                 let hit = false;
                 
-                // Terrain collision (only in ocean)
-                if (!caveSystem.inCave) {
+                // Environment collision
+                if (!undergroundCity.inCity) {
+                    // Ocean terrain collision
                     const terrainHeight = getHeight(torpedo.position.x, torpedo.position.z);
                     if (torpedo.position.y <= terrainHeight + 1) {
                         hit = true;
                     }
                 } else {
-                    // Cave wall collision
-                    if (checkCaveCollision(torpedo.position)) {
+                    // City collision - check buildings
+                    if (checkCityCollision(torpedo.position)) {
                         hit = true;
                     }
                 }
@@ -2040,7 +2689,7 @@
 
         // Spawn marine life - Optimized with adaptive spawning
         function spawnMarineLife() {
-            if (caveSystem.inCave) return; // No marine life in caves
+            if (undergroundCity.inCity) return; // No marine life in underground city
             
             const subPos = submarine.position;
             
@@ -2389,39 +3038,6 @@
             hole2.scale.set(0.8, 0.6, 0.8);
             group.add(hole2);
             
-            // Scattered cargo/treasure
-            for (let i = 0; i < 5; i++) {
-                const barrelGeometry = new THREE.CylinderGeometry(0.8, 0.8, 1.5, 8);
-                const barrelMaterial = new THREE.MeshPhongMaterial({ color: 0x4a3728 });
-                const barrel = new THREE.Mesh(barrelGeometry, barrelMaterial);
-                barrel.position.set(
-                    (Math.random() - 0.5) * 30,
-                    Math.random() * 2,
-                    (Math.random() - 0.5) * 15
-                );
-                barrel.rotation.set(
-                    Math.random() * 0.5,
-                    Math.random() * Math.PI,
-                    Math.random() * 0.5
-                );
-                group.add(barrel);
-            }
-            
-            // Marine growth simulation
-            for (let i = 0; i < 20; i++) {
-                const growthGeometry = new THREE.SphereGeometry(0.3 + Math.random() * 0.5, 6, 6);
-                const growthMaterial = new THREE.MeshPhongMaterial({ 
-                    color: new THREE.Color(0.1, 0.3 + Math.random() * 0.2, 0.1)
-                });
-                const growth = new THREE.Mesh(growthGeometry, growthMaterial);
-                growth.position.set(
-                    (Math.random() - 0.5) * 35,
-                    Math.random() * 8,
-                    (Math.random() - 0.5) * 12
-                );
-                group.add(growth);
-            }
-            
             return group;
         }
 
@@ -2431,40 +3047,40 @@
             if (generatedCells.has(cellKey)) return;
             
             generatedCells.set(cellKey, true);
-            const objects = { kelp: [], fish: [], rocks: [], shipwrecks: [], caves: [] };
+            const objects = { kelp: [], fish: [], rocks: [], shipwrecks: [], sinkholes: [] };
             cellObjects.set(cellKey, objects);
             
             const centerX = cellX * cellSize;
             const centerZ = cellZ * cellSize;
             
-            // Generate cave entrances in this cell
-            const entrances = findCaveEntrances(centerX, centerZ, cellSize / 2);
+            // Generate sinkhole entrances in this cell
+            const sinkholes = findSinkholes(centerX, centerZ, cellSize / 2);
             
-            // Force a cave in every 4th cell for testing
-            if (entrances.length === 0 && (cellX % 4 === 0 && cellZ % 4 === 0)) {
-                const forcedEntrance = {
+            // Force a sinkhole in every 3rd cell for better exploration
+            if (sinkholes.length === 0 && (cellX % 3 === 0 && cellZ % 3 === 0)) {
+                const forcedSinkhole = {
                     x: centerX + (Math.random() - 0.5) * cellSize * 0.6,
                     z: centerZ + (Math.random() - 0.5) * cellSize * 0.6,
-                    y: getHeight(centerX, centerZ) - 5,
+                    y: getHeight(centerX, centerZ) - 8,
                     key: `forced-${cellX}-${cellZ}`
                 };
-                entrances.push(forcedEntrance);
+                sinkholes.push(forcedSinkhole);
             }
             
-            entrances.forEach(entrance => {
-                if (!caveSystem.entrances.has(entrance.key)) {
-                    const caveEntrance = createCaveEntrance(entrance.x, entrance.z, entrance.y);
-                    caveEntrance.position.set(entrance.x, entrance.y, entrance.z);
-                    scene.add(caveEntrance);
-                    objects.caves.push(caveEntrance);
-                    caveSystem.entrances.set(entrance.key, entrance);
+            sinkholes.forEach(sinkhole => {
+                if (!undergroundCity.sinkholes.has(sinkhole.key)) {
+                    const sinkholeEntrance = createSinkholeEntrance(sinkhole.x, sinkhole.z, sinkhole.y);
+                    sinkholeEntrance.position.set(sinkhole.x, sinkhole.y, sinkhole.z);
+                    scene.add(sinkholeEntrance);
+                    objects.sinkholes.push(sinkholeEntrance);
+                    undergroundCity.sinkholes.set(sinkhole.key, sinkhole);
                     objectCount++;
-                    console.log(`Created cave entrance at ${entrance.x.toFixed(1)}, ${entrance.z.toFixed(1)}`);
+                    console.log(`Created sinkhole entrance at ${sinkhole.x.toFixed(1)}, ${sinkhole.z.toFixed(1)}`);
                 }
             });
             
-            // Only generate ocean content if not in caves
-            if (!caveSystem.inCave) {
+            // Only generate ocean content if not in underground city
+            if (!undergroundCity.inCity) {
                 const terrainHeight = getHeight(centerX, centerZ);
                 
                 // Generate kelp forests
@@ -2549,7 +3165,7 @@
                 updateCounter: 0,
                 updatePosition: function(submarinePosition) {
                     // Only update terrain in ocean mode
-                    if (caveSystem.inCave) return;
+                    if (undergroundCity.inCity) return;
                     
                     const centerChunkX = Math.round(submarinePosition.x / chunkSize);
                     const centerChunkZ = Math.round(submarinePosition.z / chunkSize);
@@ -2667,7 +3283,7 @@
             
             for (const [cellKey, objects] of cellObjects) {
                 if (!activeCells.has(cellKey) && cleanupCount < maxCleanupPerFrame) {
-                    [...objects.kelp, ...objects.fish, ...objects.rocks, ...objects.shipwrecks, ...objects.caves].forEach(obj => {
+                    [...objects.kelp, ...objects.fish, ...objects.rocks, ...objects.shipwrecks, ...objects.sinkholes].forEach(obj => {
                         scene.remove(obj);
                         objectCount--;
                     });
@@ -2706,7 +3322,7 @@
 
         // Animate ocean life - Optimized with frame skipping
         function animateOceanLife(time) {
-            if (caveSystem.inCave) return;
+            if (undergroundCity.inCity) return;
             
             const t = time * 0.001;
             
@@ -2742,28 +3358,6 @@
                         });
                     }
                 });
-
-                // Animate cave entrance particles and beacons
-                if (frameCount % 4 === 0) {
-                    objects.caves.forEach(caveEntrance => {
-                        if (caveEntrance.userData && caveEntrance.userData.particles) {
-                            const particles = caveEntrance.userData.particles;
-                            const positions = particles.geometry.attributes.position.array;
-                            
-                            for (let i = 0; i < positions.length; i += 3) {
-                                positions[i + 1] += Math.sin(t + i) * 0.02;
-                            }
-                            particles.geometry.attributes.position.needsUpdate = true;
-                        }
-                        
-                        // Animate beacon pulsing
-                        if (caveEntrance.userData && caveEntrance.userData.beacon) {
-                            caveEntrance.userData.pulsePhase += 0.05;
-                            const pulse = Math.sin(caveEntrance.userData.pulsePhase) * 0.3 + 0.7;
-                            caveEntrance.userData.beacon.scale.setScalar(0.8 + pulse * 0.4);
-                        }
-                    });
-                }
             }
         }
 
@@ -2796,12 +3390,16 @@
             }
             
             // Collision detection based on environment
-            if (caveSystem.inCave) {
-                // Cave collision detection
-                if (checkCaveCollision(submarine.position)) {
+            if (undergroundCity.inCity) {
+                // Underground city collision detection
+                if (checkCityCollision(submarine.position)) {
                     // Restore previous position if collision detected
                     submarine.position.copy(prevPosition);
                 }
+                
+                // Ensure submarine stays above city terrain
+                const cityTerrainHeight = getCityHeight(submarine.position.x, submarine.position.z);
+                submarine.position.y = Math.max(submarine.position.y, cityTerrainHeight + 3);
             } else {
                 // Ocean terrain collision
                 const terrainHeight = getHeight(submarine.position.x, submarine.position.z);
@@ -2829,15 +3427,15 @@
             }
         }
 
-        // Update camera with enhanced constraints for caves
+        // Update camera with enhanced constraints for underground city
         function updateCamera() {
-            // Cave-specific camera constraints
-            if (caveSystem.inCave) {
-                // Closer camera in caves for better navigation
-                cameraDistance = Math.min(cameraDistance, 30);
-                cameraDistance = Math.max(cameraDistance, 8);
+            // Underground city-specific camera constraints
+            if (undergroundCity.inCity) {
+                // Wider camera distance for large city spaces
+                cameraDistance = Math.min(cameraDistance, 80);
+                cameraDistance = Math.max(cameraDistance, 12);
                 
-                // More restrictive vertical angle in caves
+                // More restrictive vertical angle in city
                 cameraAngleV = Math.max(-Math.PI/3, Math.min(Math.PI/3, cameraAngleV));
             } else {
                 // Ocean camera constraints
@@ -2863,12 +3461,15 @@
             document.getElementById('depth').textContent = Math.abs(submarine.position.y).toFixed(1);
             document.getElementById('position').textContent = 
                 `${submarine.position.x.toFixed(1)}, ${submarine.position.z.toFixed(1)}`;
+            document.getElementById('district').textContent = undergroundCity.currentDistrict;
             document.getElementById('sharks').textContent = sharks.length;
             document.getElementById('turtles').textContent = turtles.length;
             document.getElementById('jellyfish').textContent = jellyfish.length;
             document.getElementById('torpedoes').textContent = torpedoes.length;
             document.getElementById('objects').textContent = objectCount;
-            document.getElementById('caves-found').textContent = `${caveSystem.entrances.size} | In Cave: ${caveSystem.inCave ? 'Yes' : 'No'}`;
+            document.getElementById('sinkholes-found').textContent = `${undergroundCity.sinkholes.size} | In City: ${undergroundCity.inCity ? 'Yes' : 'No'}`;
+            document.getElementById('buildings').textContent = `${undergroundCity.buildings.length} buildings | ${undergroundCity.vehicles.length} vehicles`;
+            document.getElementById('city-districts').textContent = `${undergroundCity.districts.filter(d => d.generated).length}/${undergroundCity.districts.length} generated`;
         }
 
         // Setup controls
@@ -2886,38 +3487,51 @@
                     case 'KeyQ': fireTorpedo('left'); break;
                     case 'KeyE': fireTorpedo('right'); break;
                     case 'KeyC':
-                        if (caveSystem.inCave) {
+                        if (undergroundCity.inCity) {
                             // Try to exit if near exit portal
-                            if (caveSystem.exitPortal) {
-                                const distance = submarine.position.distanceTo(caveSystem.exitPortal.position);
-                                console.log('C pressed in cave, distance to portal:', distance);
-                                if (distance < 20) {
-                                    exitCave();
+                            if (undergroundCity.exitPortal) {
+                                const distance = submarine.position.distanceTo(undergroundCity.exitPortal.position);
+                                console.log('C pressed in city, distance to portal:', distance);
+                                if (distance < 25) {
+                                    exitUndergroundCity();
                                 } else {
                                     console.log('Too far from exit portal');
                                 }
                             }
                         } else {
-                            // Try to enter cave
-                            console.log('C pressed, trying to enter cave. Near entrance:', !!caveSystem.nearEntrance);
-                            if (caveSystem.nearEntrance) {
-                                enterCave();
+                            // Try to enter underground city
+                            console.log('C pressed, trying to enter city. Near sinkhole:', !!undergroundCity.nearSinkhole);
+                            if (undergroundCity.nearSinkhole) {
+                                enterUndergroundCity();
                             } else {
-                                console.log('No nearby entrance found');
+                                console.log('No nearby sinkhole found');
                             }
                         }
                         break;
                     case 'KeyT':
-                        environment.chunks.forEach(chunk => {
-                            chunk.material.wireframe = !chunk.material.wireframe;
-                        });
+                        // Toggle wireframe for city meshes in city mode
+                        if (undergroundCity.inCity) {
+                            undergroundCity.allCityMeshes.forEach(mesh => {
+                                if (mesh.children && mesh.children.length > 0) {
+                                    mesh.children.forEach(child => {
+                                        if (child.material) {
+                                            child.material.wireframe = !child.material.wireframe;
+                                        }
+                                    });
+                                }
+                            });
+                        } else {
+                            environment.chunks.forEach(chunk => {
+                                chunk.material.wireframe = !chunk.material.wireframe;
+                            });
+                        }
                         break;
                     case 'KeyF':
                         if (scene.fog) {
                             scene.fog = null;
                         } else {
-                            const fogColor = caveSystem.inCave ? 0x221133 : 0x002244;
-                            const fogDensity = caveSystem.inCave ? 0.002 : 0.006;
+                            const fogColor = undergroundCity.inCity ? 0x221133 : 0x002244;
+                            const fogDensity = undergroundCity.inCity ? 0.002 : 0.006;
                             scene.fog = new THREE.FogExp2(fogColor, fogDensity);
                         }
                         break;
@@ -2970,7 +3584,7 @@
 
             document.addEventListener('wheel', (e) => {
                 cameraDistance += e.deltaY * 0.05;
-                const maxDistance = caveSystem.inCave ? 30 : 100;
+                const maxDistance = undergroundCity.inCity ? 80 : 100;
                 cameraDistance = Math.max(5, Math.min(maxDistance, cameraDistance));
                 e.preventDefault();
             });
@@ -3106,11 +3720,11 @@
             
             document.addEventListener('touchend', (e) => {
                 isTouching = false;
-            });
+            }, { passive: true });
             
             document.addEventListener('touchcancel', (e) => {
                 isTouching = false;
-            });
+            }, { passive: true });
             
             // Pinch to zoom for mobile
             let initialDistance = 0;
@@ -3121,7 +3735,7 @@
                     const dy = e.touches[0].clientY - e.touches[1].clientY;
                     initialDistance = Math.sqrt(dx * dx + dy * dy);
                 }
-            });
+            }, { passive: true });
             
             document.addEventListener('touchmove', (e) => {
                 if (e.touches.length === 2) {
@@ -3132,7 +3746,7 @@
                     if (initialDistance > 0) {
                         const scale = distance / initialDistance;
                         cameraDistance /= scale;
-                        const maxDistance = caveSystem.inCave ? 30 : 100;
+                        const maxDistance = undergroundCity.inCity ? 80 : 100;
                         cameraDistance = Math.max(5, Math.min(maxDistance, cameraDistance));
                         initialDistance = distance;
                     }
