@@ -1107,12 +1107,36 @@
                 setTimeout(() => overlay.style.display = 'none', 1000);
             },
             
-            cleanupLayer(layer) {
+            cleanupLayer(currentLayer) {
                 switch (layer) {
                     case GAME_LAYERS.UNDERWATER:
                         document.getElementById('surface-warning').style.display = 'none';
                         document.getElementById('city-indicator').style.display = 'none';
+                        
+                        // Hide all underwater terrain
+                        environment.chunks.forEach(chunk => chunk.visible = false);
+                        
+                        // Hide all underwater objects and marine life
+                        for (const [cellKey, objects] of cellObjects) {
+                            [...objects.kelp, ...objects.fish, ...objects.rocks, ...objects.shipwrecks, ...objects.sinkholes, ...objects.plankton].forEach(obj => {
+                                obj.visible = false;
+                            });
+                        }
+                        
+                        // Hide marine life
+                        sharks.forEach(shark => shark.visible = false);
+                        turtles.forEach(turtle => turtle.visible = false);
+                        jellyfish.forEach(jelly => jelly.visible = false);
+                        
+                        // Hide plankton systems
+                        planktonSystems.forEach(plankton => plankton.visible = false);
+                        
+                        // Hide torpedoes
+                        torpedoes.forEach(torpedo => torpedo.visible = false);
+                        
+                        console.log('🌊 Cleaned up underwater layer - hidden all entities');
                         break;
+                        
                     case GAME_LAYERS.SURFACE:
                         if (surfaceSystem.waves) {
                             scene.remove(surfaceSystem.waves);
@@ -1121,9 +1145,11 @@
                         surfaceSystem.islands.forEach(island => scene.remove(island));
                         surfaceSystem.islands = [];
                         break;
+                        
                     case GAME_LAYERS.CARRIER:
                         document.getElementById('aircraft-selection').style.display = 'none';
                         break;
+                        
                     case GAME_LAYERS.AIRCRAFT:
                         document.getElementById('flight-hud').style.display = 'none';
                         if (gameObjects.aircraft) {
@@ -1135,6 +1161,7 @@
                         skySystem.islands = [];
                         skySystem.clouds = [];
                         break;
+                        
                     case GAME_LAYERS.UNDERGROUND_CITY:
                         this.cleanupUndergroundCity();
                         break;
@@ -1210,16 +1237,27 @@
                 
                 // Show ocean objects
                 for (const [cellKey, objects] of cellObjects) {
-                    [...objects.kelp, ...objects.fish, ...objects.rocks, ...objects.shipwrecks, ...objects.sinkholes].forEach(obj => {
+                    [...objects.kelp, ...objects.fish, ...objects.rocks, ...objects.shipwrecks, ...objects.sinkholes, ...objects.plankton].forEach(obj => {
                         obj.visible = true;
                     });
                 }
+                
+                // Show marine life
+                sharks.forEach(shark => shark.visible = true);
+                turtles.forEach(turtle => turtle.visible = true);
+                jellyfish.forEach(jelly => jelly.visible = true);
+                
+                // Show plankton systems
+                planktonSystems.forEach(plankton => plankton.visible = true);
+                
+                // Show torpedoes
+                torpedoes.forEach(torpedo => torpedo.visible = true);
                 
                 scene.fog = new THREE.FogExp2(0x002244, 0.004);
                 updateLighting('underwater');
                 
                 document.getElementById('current-layer').textContent = 'Ocean Depths';
-                console.log('🌊 Loaded underwater layer');
+                console.log('🌊 Loaded underwater layer - restored all entities');
             },
             
             async loadSurfaceLayer() {
@@ -1798,15 +1836,15 @@
             group.userData = {
                 health: 75,
                 maxHealth: 75,
-                speed: 0.5,
-                attackRange: 12,
+                speed: 0.6,
+                attackRange: 15,
                 attackDamage: 25,
                 lastAttackTime: 0,
-                attackCooldown: 1800,
+                attackCooldown: 1500,
                 state: 'hunting',
                 circleAngle: Math.random() * Math.PI * 2,
                 circleRadius: 20 + Math.random() * 15,
-                aggroRange: 60,
+                aggroRange: 70,
                 type: 'shark',
                 swimAnimation: Math.random() * Math.PI * 2,
                 huntingPattern: Math.random() < 0.5 ? 'direct' : 'ambush',
@@ -3645,7 +3683,7 @@
                             if (shark.userData.health <= 0) {
                                 scene.remove(shark);
                                 sharks.splice(sharkIndex, 1);
-                                console.log('🦈 Shark eliminated!');
+                                console.log('🦈 Shark eliminated by torpedo!');
                             }
                             hit = true;
                         }
@@ -3824,10 +3862,11 @@
             const subPos = gameObjects.submarine.position;
             const spawnMultiplier = adaptiveQuality;
             
-            if (sharks.length < Math.floor(4 * spawnMultiplier) && Math.random() < 0.008 * spawnMultiplier) {
+            // Enhanced shark spawning with guaranteed minimum
+            if (sharks.length < Math.floor(3 * spawnMultiplier) && Math.random() < 0.012 * spawnMultiplier) {
                 const shark = createShark();
                 const angle = Math.random() * Math.PI * 2;
-                const distance = 50 + Math.random() * 40;
+                const distance = 40 + Math.random() * 50;
                 shark.position.set(
                     subPos.x + Math.cos(angle) * distance,
                     subPos.y + (Math.random() - 0.5) * 25,
@@ -3835,9 +3874,25 @@
                 );
                 scene.add(shark);
                 sharks.push(shark);
+                console.log(`🦈 Shark spawned at distance ${distance.toFixed(1)}m`);
             }
             
-            if (turtles.length < Math.floor(3 * spawnMultiplier) && Math.random() < 0.004 * spawnMultiplier) {
+            // Force spawn at least one shark if none exist
+            if (sharks.length === 0 && Math.random() < 0.02) {
+                const shark = createShark();
+                const angle = Math.random() * Math.PI * 2;
+                const distance = 60;
+                shark.position.set(
+                    subPos.x + Math.cos(angle) * distance,
+                    subPos.y + (Math.random() - 0.5) * 20,
+                    subPos.z + Math.sin(angle) * distance
+                );
+                scene.add(shark);
+                sharks.push(shark);
+                console.log('🦈 Force-spawned shark to ensure presence');
+            }
+            
+            if (turtles.length < Math.floor(2 * spawnMultiplier) && Math.random() < 0.006 * spawnMultiplier) {
                 const turtle = createTurtle();
                 const angle = Math.random() * Math.PI * 2;
                 const distance = 30 + Math.random() * 35;
@@ -3852,7 +3907,7 @@
                 turtles.push(turtle);
             }
             
-            if (jellyfish.length < Math.floor(4 * spawnMultiplier) && Math.random() < 0.006 * spawnMultiplier) {
+            if (jellyfish.length < Math.floor(3 * spawnMultiplier) && Math.random() < 0.008 * spawnMultiplier) {
                 const jelly = createJellyfish();
                 const angle = Math.random() * Math.PI * 2;
                 const distance = 25 + Math.random() * 30;
@@ -3889,6 +3944,19 @@
                 }
             } else if (distance < 35) {
                 userData.state = 'circling';
+            }
+            
+            // Add visual warning glow when shark is aggressive
+            if (userData.state === 'attacking' || userData.state === 'pounceCharging') {
+                if (!shark.userData.warningGlow) {
+                    const warningGlow = new THREE.PointLight(0xff4444, 2, 30);
+                    warningGlow.position.set(0, 0, 0);
+                    shark.add(warningGlow);
+                    shark.userData.warningGlow = warningGlow;
+                }
+            } else if (shark.userData.warningGlow) {
+                shark.remove(shark.userData.warningGlow);
+                shark.userData.warningGlow = null;
             }
             
             // Enhanced swimming animation
@@ -3995,10 +4063,12 @@
                             userData.chaseBoost = 1.0;
                             
                             // Create visual attack effect
-                            const attackFlash = new THREE.PointLight(0xff4444, 3, 20);
+                            const attackFlash = new THREE.PointLight(0xff4444, 4, 25);
                             attackFlash.position.copy(shark.position);
                             scene.add(attackFlash);
-                            setTimeout(() => scene.remove(attackFlash), 200);
+                            setTimeout(() => scene.remove(attackFlash), 300);
+                            
+                            console.log(`🦈 Shark attacked! Damage: ${userData.attackDamage}, Sub health: ${submarineHealth}`);
                         }
                     }
                     break;
@@ -4613,7 +4683,7 @@
             switch (currentLayer) {
                 case GAME_LAYERS.UNDERWATER:
                     document.getElementById('environment').textContent = 'Ocean Depths';
-                    document.getElementById('marine-life').textContent = `${sharks.length + turtles.length + jellyfish.length}`;
+                    document.getElementById('marine-life').textContent = `${sharks.length + turtles.length + jellyfish.length} (🦈${sharks.length})`;
                     document.getElementById('torpedoes').textContent = torpedoes.length;
                     document.getElementById('speed').textContent = '0.6 kts';
                     document.getElementById('status').textContent = 'Submerged';
@@ -5241,9 +5311,9 @@
             gameObjects.player = gameObjects.submarine;
             
             // Enhanced submarine lighting system with volumetric effects
-            const headlight1 = new THREE.SpotLight(0xffffcc, 4, 150, Math.PI / 4.5, 0.3);
+            const headlight1 = new THREE.SpotLight(0xffffcc, 4, 150, Math.PI / 6, 0.3);
             headlight1.position.set(-1.5, 0.5, 7);
-            headlight1.target.position.set(-1.5, -5, 30);
+            headlight1.target.position.set(-1.5, -2, 35);
             headlight1.castShadow = true;
             headlight1.shadow.mapSize.width = 1024;
             headlight1.shadow.mapSize.height = 1024;
@@ -5253,24 +5323,25 @@
             gameObjects.submarine.add(headlight1.target);
             spotlights.push(headlight1);
             
-            // Add volumetric light cone for headlight1
-            const lightCone1Geometry = new THREE.ConeGeometry(8, 25, 8, 1, true);
+            // Add volumetric light cone for headlight1 - properly oriented downward
+            const lightCone1Geometry = new THREE.ConeGeometry(6, 20, 8, 1, true);
             const lightCone1Material = new THREE.MeshBasicMaterial({
                 color: 0xffffcc,
                 transparent: true,
-                opacity: 0.15,
+                opacity: 0.12,
                 side: THREE.DoubleSide,
                 blending: THREE.AdditiveBlending
             });
             const lightCone1 = new THREE.Mesh(lightCone1Geometry, lightCone1Material);
-            lightCone1.position.set(-1.5, 0.5, 19);
-            lightCone1.rotation.x = Math.PI;
+            lightCone1.position.set(-1.5, 0.5, 17);
+            lightCone1.rotation.x = -Math.PI / 2; // Point downward
+            lightCone1.rotation.z = 0; // No horizontal rotation
             gameObjects.submarine.add(lightCone1);
             lightCones.push(lightCone1);
             
-            const headlight2 = new THREE.SpotLight(0xffffcc, 4, 150, Math.PI / 4.5, 0.3);
+            const headlight2 = new THREE.SpotLight(0xffffcc, 4, 150, Math.PI / 6, 0.3);
             headlight2.position.set(1.5, 0.5, 7);
-            headlight2.target.position.set(1.5, -5, 30);
+            headlight2.target.position.set(1.5, -2, 35);
             headlight2.castShadow = true;
             headlight2.shadow.mapSize.width = 1024;
             headlight2.shadow.mapSize.height = 1024;
@@ -5280,18 +5351,19 @@
             gameObjects.submarine.add(headlight2.target);
             spotlights.push(headlight2);
             
-            // Add volumetric light cone for headlight2
-            const lightCone2Geometry = new THREE.ConeGeometry(8, 25, 8, 1, true);
+            // Add volumetric light cone for headlight2 - properly oriented downward
+            const lightCone2Geometry = new THREE.ConeGeometry(6, 20, 8, 1, true);
             const lightCone2Material = new THREE.MeshBasicMaterial({
                 color: 0xffffcc,
                 transparent: true,
-                opacity: 0.15,
+                opacity: 0.12,
                 side: THREE.DoubleSide,
                 blending: THREE.AdditiveBlending
             });
             const lightCone2 = new THREE.Mesh(lightCone2Geometry, lightCone2Material);
-            lightCone2.position.set(1.5, 0.5, 19);
-            lightCone2.rotation.x = Math.PI;
+            lightCone2.position.set(1.5, 0.5, 17);
+            lightCone2.rotation.x = -Math.PI / 2; // Point downward
+            lightCone2.rotation.z = 0; // No horizontal rotation
             gameObjects.submarine.add(lightCone2);
             lightCones.push(lightCone2);
             
@@ -5355,14 +5427,36 @@
                     }
                     
                     // Enhanced marine life management
-                    if (frameCount % Math.ceil(60 / adaptiveQuality) === 0) {
+                    if (frameCount % Math.ceil(45 / adaptiveQuality) === 0) {
                         spawnMarineLife();
                     }
                     
-                    if (frameCount % Math.ceil(3 / adaptiveQuality) === 0) {
-                        sharks.forEach(shark => updateSharkAI(shark, time));
-                        turtles.forEach(turtle => updateTurtleAI(turtle, time));
-                        jellyfish.forEach(jelly => updateJellyfishAI(jelly, time));
+                    // Ensure shark AI updates every frame for responsive behavior
+                    if (frameCount % Math.ceil(2 / adaptiveQuality) === 0) {
+                        // Clean up dead sharks first
+                        for (let i = sharks.length - 1; i >= 0; i--) {
+                            if (sharks[i].userData.health <= 0) {
+                                scene.remove(sharks[i]);
+                                sharks.splice(i, 1);
+                                console.log('🦈 Removed dead shark from scene');
+                            }
+                        }
+                        
+                        sharks.forEach((shark, index) => {
+                            if (shark.visible && shark.userData.health > 0) {
+                                updateSharkAI(shark, time);
+                            }
+                        });
+                        turtles.forEach(turtle => {
+                            if (turtle.visible) {
+                                updateTurtleAI(turtle, time);
+                            }
+                        });
+                        jellyfish.forEach(jelly => {
+                            if (jelly.visible) {
+                                updateJellyfishAI(jelly, time);
+                            }
+                        });
                     }
                     break;
                     
