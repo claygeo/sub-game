@@ -963,7 +963,7 @@
         let objectCount = 0, frameCount = 0, lastPerformanceCheck = 0, adaptiveQuality = 1.0;
         
         // Submarine systems
-        let headlightsOn = true, spotlights = [], lightCones = [], submarineHealth = 100, maxHealth = 100, isGameOver = false;
+        let headlightsOn = true, spotlights = [], submarineHealth = 100, maxHealth = 100, isGameOver = false;
         
         // Marine life and combat
         let sharks = [], turtles = [], jellyfish = [], torpedoes = [];
@@ -1108,10 +1108,12 @@
             },
             
             cleanupLayer(currentLayer) {
-                switch (layer) {
+                // FIXED: Use the correct parameter name
+                switch (currentLayer) {
                     case GAME_LAYERS.UNDERWATER:
                         document.getElementById('surface-warning').style.display = 'none';
                         document.getElementById('city-indicator').style.display = 'none';
+                        document.getElementById('layer-indicator').style.display = 'none';
                         
                         // Hide all underwater terrain
                         environment.chunks.forEach(chunk => chunk.visible = false);
@@ -1138,6 +1140,7 @@
                         break;
                         
                     case GAME_LAYERS.SURFACE:
+                        document.getElementById('layer-indicator').style.display = 'none';
                         if (surfaceSystem.waves) {
                             scene.remove(surfaceSystem.waves);
                             surfaceSystem.waves = null;
@@ -1221,16 +1224,14 @@
             },
             
             async loadUnderwaterLayer() {
-                const savedState = this.savedStates.get(GAME_LAYERS.UNDERWATER);
-                if (savedState && gameObjects.submarine) {
-                    gameObjects.submarine.position.copy(savedState.position);
-                    gameObjects.submarine.rotation.copy(savedState.rotation);
-                    submarineHealth = savedState.health;
-                } else if (gameObjects.submarine) {
-                    gameObjects.submarine.position.y = Math.max(gameObjects.submarine.position.y, 5);
+                // Don't restore position from surface transition - keep current position but adjust depth
+                if (gameObjects.submarine) {
+                    // When coming from surface, set to a reasonable underwater depth
+                    if (gameObjects.submarine.position.y > 100) {
+                        gameObjects.submarine.position.y = 50; // Safe underwater depth
+                    }
+                    gameObjects.player = gameObjects.submarine;
                 }
-                
-                gameObjects.player = gameObjects.submarine;
                 
                 // Show ocean terrain
                 environment.chunks.forEach(chunk => chunk.visible = true);
@@ -1264,6 +1265,7 @@
                 createSurfaceEnvironment();
                 
                 if (gameObjects.submarine) {
+                    // Position submarine at surface level
                     gameObjects.submarine.position.y = -1;
                     gameObjects.player = gameObjects.submarine;
                 }
@@ -4936,9 +4938,6 @@
                         spotlights.forEach(light => {
                             light.visible = headlightsOn;
                         });
-                        lightCones.forEach(cone => {
-                            cone.visible = headlightsOn;
-                        });
                         console.log(`💡 Headlights ${headlightsOn ? 'ON' : 'OFF'}`);
                         break;
                     case 'KeyT':
@@ -5194,9 +5193,6 @@
                     spotlights.forEach(light => {
                         light.visible = headlightsOn;
                     });
-                    lightCones.forEach(cone => {
-                        cone.visible = headlightsOn;
-                    });
                 }, { passive: false });
             }
             
@@ -5310,62 +5306,30 @@
             scene.add(gameObjects.submarine);
             gameObjects.player = gameObjects.submarine;
             
-            // Enhanced submarine lighting system with volumetric effects
-            const headlight1 = new THREE.SpotLight(0xffffcc, 4, 150, Math.PI / 6, 0.3);
+            // Enhanced submarine lighting system - functional spotlights only
+            const headlight1 = new THREE.SpotLight(0xffffcc, 5, 200, Math.PI / 6, 0.25);
             headlight1.position.set(-1.5, 0.5, 7);
-            headlight1.target.position.set(-1.5, -2, 35);
+            headlight1.target.position.set(-1.5, -8, 40);
             headlight1.castShadow = true;
-            headlight1.shadow.mapSize.width = 1024;
-            headlight1.shadow.mapSize.height = 1024;
+            headlight1.shadow.mapSize.width = 2048;
+            headlight1.shadow.mapSize.height = 2048;
             headlight1.shadow.camera.near = 0.5;
-            headlight1.shadow.camera.far = 150;
+            headlight1.shadow.camera.far = 200;
             gameObjects.submarine.add(headlight1);
             gameObjects.submarine.add(headlight1.target);
             spotlights.push(headlight1);
             
-            // Add volumetric light cone for headlight1 - properly oriented downward
-            const lightCone1Geometry = new THREE.ConeGeometry(6, 20, 8, 1, true);
-            const lightCone1Material = new THREE.MeshBasicMaterial({
-                color: 0xffffcc,
-                transparent: true,
-                opacity: 0.12,
-                side: THREE.DoubleSide,
-                blending: THREE.AdditiveBlending
-            });
-            const lightCone1 = new THREE.Mesh(lightCone1Geometry, lightCone1Material);
-            lightCone1.position.set(-1.5, 0.5, 17);
-            lightCone1.rotation.x = -Math.PI / 2; // Point downward
-            lightCone1.rotation.z = 0; // No horizontal rotation
-            gameObjects.submarine.add(lightCone1);
-            lightCones.push(lightCone1);
-            
-            const headlight2 = new THREE.SpotLight(0xffffcc, 4, 150, Math.PI / 6, 0.3);
+            const headlight2 = new THREE.SpotLight(0xffffcc, 5, 200, Math.PI / 6, 0.25);
             headlight2.position.set(1.5, 0.5, 7);
-            headlight2.target.position.set(1.5, -2, 35);
+            headlight2.target.position.set(1.5, -8, 40);
             headlight2.castShadow = true;
-            headlight2.shadow.mapSize.width = 1024;
-            headlight2.shadow.mapSize.height = 1024;
+            headlight2.shadow.mapSize.width = 2048;
+            headlight2.shadow.mapSize.height = 2048;
             headlight2.shadow.camera.near = 0.5;
-            headlight2.shadow.camera.far = 150;
+            headlight2.shadow.camera.far = 200;
             gameObjects.submarine.add(headlight2);
             gameObjects.submarine.add(headlight2.target);
             spotlights.push(headlight2);
-            
-            // Add volumetric light cone for headlight2 - properly oriented downward
-            const lightCone2Geometry = new THREE.ConeGeometry(6, 20, 8, 1, true);
-            const lightCone2Material = new THREE.MeshBasicMaterial({
-                color: 0xffffcc,
-                transparent: true,
-                opacity: 0.12,
-                side: THREE.DoubleSide,
-                blending: THREE.AdditiveBlending
-            });
-            const lightCone2 = new THREE.Mesh(lightCone2Geometry, lightCone2Material);
-            lightCone2.position.set(1.5, 0.5, 17);
-            lightCone2.rotation.x = -Math.PI / 2; // Point downward
-            lightCone2.rotation.z = 0; // No horizontal rotation
-            gameObjects.submarine.add(lightCone2);
-            lightCones.push(lightCone2);
             
             // Enhanced submarine ambient glow
             const subGlow = new THREE.PointLight(0xffff88, 1.5, 35);
